@@ -1,0 +1,25 @@
+Package: covidcompare
+Title: Covid Compare
+Version: 0.0.0.9000
+Authors: Joseph Friedman, Patrick Liu
+Description: Code and data associated with Predictive performance of international COVID-19 mortality forecasting models 
+Depends: R (>= 3.5.2),
+    data.table, 
+    tidyverse, 
+    rio, 
+    medrxivr, 
+    easyPubMed, 
+    RISmed,
+    git2r,
+    rvest,
+    stringr,
+    httr,
+    ggplot2,
+    grid,
+    gridExtra,
+    zoo,
+    RCurl,
+    lubridate,
+    cowplot, 
+    reldist
+License: Unknown 
