@@ -70,12 +70,17 @@ errors <- data[!is.na(errwk) & !is.na(truth)&iter_num>1]
 errors[, error := deaths_cum_shifted - truth]
 # smoothed daily actual deaths
 
+
+
+
+
 # weekly error
 errors <- errors[order(location_name, model, model_date, errwk)]
 errors[, truth_wk := truth - shift(truth), by = .(location_name, model, model_date)]
 errors[, deaths_cum_shifted_wk := deaths_cum_shifted - shift(deaths_cum_shifted), by = .(location_name, model, model_date)]
 errors[, wkly_error := deaths_cum_shifted_wk - truth_wk]
 errors <- errors[errwk != 0]
+
 
 
 # make template to use in visualizing overlap
@@ -90,6 +95,7 @@ errors[, abs_error := abs(error)]
 errors[, per_error := (error / truth) * 100]
 errors[, abs_per_error := abs(per_error)]
 
+#weekly
 errors[, wkly_abs_error := abs(wkly_error)]
 errors[, wkly_per_error := (wkly_error / truth_wk) * 100]
 errors[, wkly_abs_per_error := abs(wkly_per_error)]
@@ -134,13 +140,16 @@ wkly.lme.errors.l[, model_month := factor(model_month, levels = c("Mar", "Apr", 
 #-------Figure 2 and Extended Data Figures 1-3 -----------------------------------
 
 mer.wts <- errors[, c("location_name", "super_region_name", "model_short", "errwk", "error", "wkly_error", "truth", "truth_wk", "model_month")]
-mer.wts <- mer.wts[!duplicated(mer.wts[, c("location_name", "super_region_name", "model_short", "errwk", "truth", "truth_wk", "model_month")])]
+mer.wts <- mer.wts[!duplicated(mer.wts[, c("location_name", "super_region_name", "model_short", "errwk", "truth", "truth_wk","model_month")])]
 mer.wts <- melt.data.table(mer.wts, id.vars = c("location_name", "super_region_name", "model_short", "errwk", "truth", "truth_wk", "model_month"), value.name = "error", variable.name = "err_type")
 
 mer.wts[, abs_error := abs(error)]
 mer.wts[err_type == "wkly_error", per_error := (error / truth_wk) * 100]
 mer.wts[err_type != "wkly_error", per_error := (error / truth) * 100]
+
+
 mer.wts[, abs_per_error := abs(per_error)]
+
 
 
 mer.wts.gp <- mer.wts[is.finite(error), .(
@@ -190,9 +199,9 @@ mer.wts.l[variable == "mape", variable := "Median Absolute Percent Error"]
 mer.wts.l[variable == "me", variable := "Median Error"]
 mer.wts.l[variable == "mpe", variable := "Median Percent Error"]
 mer.wts.l[variable == "mae", variable := "Median Absolute Error"]
-
-mer.wts.l[err_type == "error", err_type := "Cumulative Error"]
+mer.wts.l[err_type == "error", err_type := "Total Cumulative Error"]
 mer.wts.l[err_type == "wkly_error", err_type := "Weekly Error"]
+
 
 # set graphing order
 mer.wts.l[, srn2 := super_region_name]
@@ -572,3 +581,19 @@ mer.wts.l[model_month=="May" &super_region_name %in%c("Sub-Saharan Africa","High
 
 
 #---------------------------------------------------------------------------------------
+#Geography Numbers in Table 1
+unique(data$model)
+length(unique(data[model=="ihme_cf" & nchar(ihme_loc_id)==3,location_name]))
+length(unique(data[model=="ihme_hseir" & nchar(ihme_loc_id)==3,location_name]))
+length(unique(data[model=="ihme_elast" & nchar(ihme_loc_id)==3,location_name]))
+length(unique(data[model=="yyg" & nchar(ihme_loc_id)==3,location_name]))
+length(unique(data[model=="delphi" & nchar(ihme_loc_id)==3,location_name]))
+length(unique(data[model=="imperial" & nchar(ihme_loc_id)==3,location_name]))
+length(unique(data[model=="lanl" & nchar(ihme_loc_id)==3,location_name]))
+(max(data[model=="lanl"&current==1,date]))
+(max(data[model=="delphi"&current==1,date]))
+(max(data[model=="imperial"&current==1,date]))
+
+
+
+
