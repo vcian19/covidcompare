@@ -300,11 +300,6 @@ df <- df[!(model=="ihme" & model_date == "2020-05-29" & location_name == "United
 ## A few model_dates have unexpected drop by 50% in cumulative deaths in IHME on a single day
 ## replace this with the average between the the preceding and day after
 
-# df[, delta := deaths - shift(deaths)]
-# df[, cancel := shift(delta, -1) + delta]
-# df[, n := seq_len(.N), by=.(model, model_date, location_name)]
-# df[, blip := ifelse(n != 1 & abs(delta/deaths) > 0.10 & abs(cancel/deaths) < 0.01 & abs(delta) > 1000, 1, 0)]
-
 df[location_name=="Italy" & model == "ihme" & model_date %in% c("2020-06-29", "2020-06-25", "2020-06-24", "2020-07-07"), temp := (shift(deaths, 1) + shift(deaths, -1))/2]
 df[location_name=="Italy" & model == "ihme" & model_date %in% c("2020-06-29", "2020-06-25", "2020-06-24", "2020-07-07") & date == "2020-05-24", `:=` (deaths=temp, lower=temp, upper=temp)]
 
@@ -367,8 +362,10 @@ if (new_locs %>% length() > 0) warning(paste0("unmapped locs: ", paste(unlist(ne
 loc.map <- rbind(loc.map, new_locs, fill=T) %>% unique
 export(loc.map, "data/ref/missing_locs.csv", na="")
 
+jhu$location_name <- NULL
+
 ## Merge on to df
-df <- merge(df, jhu,  by = c("location_name", "ihme_loc_id", "date"), all.x = T)
+df <- merge(df, jhu,  by = c("ihme_loc_id", "date"), all.x = T)
 
 
 #--NYT DATA CLEAN-----------------------------------------------------------
@@ -379,7 +376,8 @@ nyt <- ("data/raw/nyt/us.csv") %>%
   setnames(c("state", "deaths"), c("location_name", "nyt"))
 nyt[location_name == "Virgin Islands", location_name := "Virgin Islands, U.S."]
 nyt <- merge(nyt, locs, by = "location_name", all.x = T)
-df <- merge(df, nyt, by = c("location_name", "ihme_loc_id", "date"), all.x = T)
+nyt$location_name <- NULL
+df <- merge(df, nyt, by = c("ihme_loc_id", "date"), all.x = T)
 
 #--DATA CLEANING-----------------------------------------------------------
 
@@ -400,10 +398,6 @@ df[model %in% c("lanl", "ihme", "delphi"), `:=` (deaths_cum = deaths, lower_cum 
 df[model %in% c("lanl", "ihme", "delphi"), `:=` (deaths = deaths_cum - data.table::shift(deaths_cum),
                                                  lower = lower_cum - data.table::shift(lower_cum),
                                                  upper = upper_cum - data.table::shift(upper_cum)), by = .(location_name, model_date, model)]
-
-## Create truth variable
-df[grepl(x = ihme_loc_id, pattern = "USA_"), truth := nyt]
-df[is.na(truth), truth := jhu]
 
 # Set date format
 dates <- data.table(date = c(df$date %>% unique, df$model_date %>% unique)) %>% unique
