@@ -37,6 +37,10 @@ Before running code, the codebase must be initialized via `covidcompare.Rproj`.
 
 `code/2_peak.r`: Calculate a true date of peak daily deaths for each location and compare to the estimated peak in each model. The peak is calculated by smoothing the true daily deaths and then identifying the first maximum value in a two-week window that it is not exceeded by more than 20% in the following three weeks and does not occur within the first or last week of data. The error and absolute are error calculated and then summarized with the median across various domains.
 
+## Updates
+
+2020-07-17
+- At the request of YYG, switched from cumulative deaths calculated by summing daily deaths to the direct estimates of cumulative deaths
 
 
 
