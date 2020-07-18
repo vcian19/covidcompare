@@ -11,10 +11,13 @@ root <- getwd()
 
 # set which graphs to produce
 r.pv_plots <- 1
-r.forecast_plots <- 1
+r.forecast_plots <- 0
 
 # load data
 data <- readRDS(paste0(root, "/data/processed/data.rds"))
+
+#drop Ecuador and Peru from framework given known issues in data
+data <- data[!(location_name%in%c("Peru","Ecuador"))]
 
 # locations file
 locs <- fread("data/ref/locs_map.csv")
@@ -68,6 +71,7 @@ data[,iter_num:=uniqueN(model_date),by=.(model,model_month)]
 # calculate error - no missings, and more than 1 model iteration for the month in question
 errors <- data[!is.na(errwk) & !is.na(truth)&iter_num>1]
 errors[, error := deaths_cum_shifted - truth]
+
 # smoothed daily actual deaths
 
 
@@ -517,7 +521,7 @@ rev <- fread("data/review/review.csv")
 nrow(rev[forecast==1])
 
 c.var <- "Median Absolute Percent Error"
-c.tp <- "Cumulative Error"
+c.tp <- "Total Cumulative Error"
 mer.wts.l[, value := round(value, 1)]
 
 #For example, pooling errors across models released in May, the median absolute percent error (MAPE) 
@@ -535,10 +539,9 @@ prnt <- mer.wts.l[super_region_name == "Global" & model_short == "Pooled" & vari
 prnt[order(model_month)]
 
 
-
-#For models released in June, at four weeks of forecasting, the best performing model was the IHME-MS SEIR model, 
-#with a cumulative MAPE of 6.4%, followed by YYG (6.5%) and LANL (8.0%)
-prnt <- mer.wts.l[model_month=="Jun"&super_region_name == "Global" & model_short != "Pooled" & variable == c.var & err_type == c.tp & errwk == 4, c("value", "model_short")]
+#For models released in June, at six weeks of forecasting, the best performing model was the IHME-MS SEIR model, 
+#with a cumulative MAPE of 10.2%, followed by LANL (11.4%) and YYG (11.5%).
+prnt <- mer.wts.l[model_month=="Jun"&super_region_name == "Global" & model_short != "Pooled" & variable == c.var & err_type == c.tp & errwk == 6, c("value", "model_short")]
 prnt[order(value)]
 
 #For models released in May, assessed at six weeks of extrapolation, the IHME-CF SEIR model had a MAPE for 
@@ -593,6 +596,13 @@ length(unique(data[model=="lanl" & nchar(ihme_loc_id)==3,location_name]))
 (max(data[model=="lanl"&current==1,date]))
 (max(data[model=="delphi"&current==1,date]))
 (max(data[model=="imperial"&current==1,date]))
+
+
+#Save YYG errors for comparison
+
+
+
+
 
 
 
