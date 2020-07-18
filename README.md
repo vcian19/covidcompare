@@ -40,7 +40,7 @@ Before running code, the codebase must be initialized via `covidcompare.Rproj`.
 ## Updates
 
 2020-07-17
-- At the request of YYG, switched from cumulative deaths calculated by summing daily deaths to the direct estimates of cumulative deaths
+- At the request of YYG, now using estimated cumulative daily deaths. Was previously using cumulative daily deaths created by summing estimates of daily deaths. 
 
 
 
