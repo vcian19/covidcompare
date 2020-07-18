@@ -183,7 +183,8 @@ clean <- function(df, model) {
     df <- df[region %in% c("ALL", "") | country == "US"]
     df[country == "Georgia", country := "Georgia (Country)"]
     df[country == "US" & region != "", country := region]
-    df <- df[!is.na(actual_deaths), predicted_deaths_mean := actual_deaths]
+    ## Fill in historical input data, creating cumulative deaths from actual_deaths (daily)
+    df[!is.na(actual_deaths), predicted_total_deaths_mean := cumsum(actual_deaths), by=.(country, region)]
   }
   if (model == "imperial") {
     df <- df[country == "Georgia", country := "Georgia (Country)"]
@@ -300,11 +301,6 @@ df <- df[!(model=="ihme" & model_date == "2020-05-29" & location_name == "United
 ## A few model_dates have unexpected drop by 50% in cumulative deaths in IHME on a single day
 ## replace this with the average between the the preceding and day after
 
-# df[, delta := deaths - shift(deaths)]
-# df[, cancel := shift(delta, -1) + delta]
-# df[, n := seq_len(.N), by=.(model, model_date, location_name)]
-# df[, blip := ifelse(n != 1 & abs(delta/deaths) > 0.10 & abs(cancel/deaths) < 0.01 & abs(delta) > 1000, 1, 0)]
-
 df[location_name=="Italy" & model == "ihme" & model_date %in% c("2020-06-29", "2020-06-25", "2020-06-24", "2020-07-07"), temp := (shift(deaths, 1) + shift(deaths, -1))/2]
 df[location_name=="Italy" & model == "ihme" & model_date %in% c("2020-06-29", "2020-06-25", "2020-06-24", "2020-07-07") & date == "2020-05-24", `:=` (deaths=temp, lower=temp, upper=temp)]
 
@@ -367,8 +363,10 @@ if (new_locs %>% length() > 0) warning(paste0("unmapped locs: ", paste(unlist(ne
 loc.map <- rbind(loc.map, new_locs, fill=T) %>% unique
 export(loc.map, "data/ref/missing_locs.csv", na="")
 
+jhu$location_name <- NULL
+
 ## Merge on to df
-df <- merge(df, jhu,  by = c("location_name", "ihme_loc_id", "date"), all.x = T)
+df <- merge(df, jhu,  by = c("ihme_loc_id", "date"), all.x = T)
 
 
 #--NYT DATA CLEAN-----------------------------------------------------------
@@ -379,7 +377,8 @@ nyt <- ("data/raw/nyt/us.csv") %>%
   setnames(c("state", "deaths"), c("location_name", "nyt"))
 nyt[location_name == "Virgin Islands", location_name := "Virgin Islands, U.S."]
 nyt <- merge(nyt, locs, by = "location_name", all.x = T)
-df <- merge(df, nyt, by = c("location_name", "ihme_loc_id", "date"), all.x = T)
+nyt$location_name <- NULL
+df <- merge(df, nyt, by = c("ihme_loc_id", "date"), all.x = T)
 
 #--DATA CLEANING-----------------------------------------------------------
 
@@ -389,19 +388,16 @@ df <- df[!(is.na(model))]
 # If starts of timeseries are missing 0s
 df[is.na(deaths), deaths := 0]
 
-## Convert imperial + YYG  from daily to cumulative space
-df[model == "yyg" & is.na(lower), lower := deaths]
-df[model == "yyg" & is.na(upper), upper := deaths]
+## Convert imperial from daily to cumulative space
 cols <- c("deaths", "lower", "upper")
-df[model %in% c("imperial", "yyg"), c(paste0(cols, "_cum")) := lapply(.SD, cumsum), .SDcols = cols, by = c("location_name", "model_date", "model")]
+df[model %in% c("imperial"), c(paste0(cols, "_cum")) := lapply(.SD, cumsum), .SDcols = cols, by = c("location_name", "model_date", "model")]
 
 # IHME, LANL, DELPHI are in cumulative space, create daily
-df[model %in% c("lanl", "ihme", "delphi"), `:=` (deaths_cum = deaths, lower_cum = lower, upper_cum=upper)]
-df[model %in% c("lanl", "ihme", "delphi"), `:=` (deaths = deaths_cum - data.table::shift(deaths_cum),
+df[model %in% c("lanl", "ihme", "delphi", "yyg"), `:=` (deaths_cum = deaths, lower_cum = lower, upper_cum=upper)]
+df[model %in% c("lanl", "ihme", "delphi", "yyg"), `:=` (deaths = deaths_cum - data.table::shift(deaths_cum),
                                                  lower = lower_cum - data.table::shift(lower_cum),
                                                  upper = upper_cum - data.table::shift(upper_cum)), by = .(location_name, model_date, model)]
-
-## Create truth variable
+## Create Truth Variable
 df[grepl(x = ihme_loc_id, pattern = "USA_"), truth := nyt]
 df[is.na(truth), truth := jhu]
 

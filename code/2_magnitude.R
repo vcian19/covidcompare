@@ -6,7 +6,7 @@
 
 ## Setup
 rm(list = ls())
-pacman::p_load(data.table, tidyverse, git2r, rvest, stringr, httr, rio, ggplot2, grid, gridExtra, cowplot, reldist)
+pacman::p_load(data.table, tidyverse, git2r, rvest, stringr, httr, rio, ggplot2, grid, gridExtra, cowplot, reldist, rasterpdf)
 root <- getwd()
 
 # set which graphs to produce
