@@ -183,7 +183,8 @@ clean <- function(df, model) {
     df <- df[region %in% c("ALL", "") | country == "US"]
     df[country == "Georgia", country := "Georgia (Country)"]
     df[country == "US" & region != "", country := region]
-    df <- df[!is.na(actual_deaths), predicted_deaths_mean := actual_deaths]
+    ## Fill in historical input data, creating cumulative deaths from actual_deaths (daily)
+    df[!is.na(actual_deaths), predicted_total_deaths_mean := cumsum(actual_deaths), by=.(country, region)]
   }
   if (model == "imperial") {
     df <- df[country == "Georgia", country := "Georgia (Country)"]
@@ -387,17 +388,18 @@ df <- df[!(is.na(model))]
 # If starts of timeseries are missing 0s
 df[is.na(deaths), deaths := 0]
 
-## Convert imperial + YYG  from daily to cumulative space
-df[model == "yyg" & is.na(lower), lower := deaths]
-df[model == "yyg" & is.na(upper), upper := deaths]
+## Convert imperial from daily to cumulative space
 cols <- c("deaths", "lower", "upper")
-df[model %in% c("imperial", "yyg"), c(paste0(cols, "_cum")) := lapply(.SD, cumsum), .SDcols = cols, by = c("location_name", "model_date", "model")]
+df[model %in% c("imperial"), c(paste0(cols, "_cum")) := lapply(.SD, cumsum), .SDcols = cols, by = c("location_name", "model_date", "model")]
 
 # IHME, LANL, DELPHI are in cumulative space, create daily
-df[model %in% c("lanl", "ihme", "delphi"), `:=` (deaths_cum = deaths, lower_cum = lower, upper_cum=upper)]
-df[model %in% c("lanl", "ihme", "delphi"), `:=` (deaths = deaths_cum - data.table::shift(deaths_cum),
+df[model %in% c("lanl", "ihme", "delphi", "yyg"), `:=` (deaths_cum = deaths, lower_cum = lower, upper_cum=upper)]
+df[model %in% c("lanl", "ihme", "delphi", "yyg"), `:=` (deaths = deaths_cum - data.table::shift(deaths_cum),
                                                  lower = lower_cum - data.table::shift(lower_cum),
                                                  upper = upper_cum - data.table::shift(upper_cum)), by = .(location_name, model_date, model)]
+## Create Truth Variable
+df[grepl(x = ihme_loc_id, pattern = "USA_"), truth := nyt]
+df[is.na(truth), truth := jhu]
 
 # Set date format
 dates <- data.table(date = c(df$date %>% unique, df$model_date %>% unique)) %>% unique

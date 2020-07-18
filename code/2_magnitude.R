@@ -16,14 +16,6 @@ r.forecast_plots <- 1
 # load data
 data <- readRDS(paste0(root, "/data/processed/data.rds"))
 
-## Create truth variable
-if (truth_ihme) {
-  data[, truth := ihme]
-} else {
-  data[grepl(x = ihme_loc_id, pattern = "USA_"), truth := nyt]
-  data[is.na(truth), truth := jhu]
-}
-
 # locations file
 locs <- fread("data/ref/locs_map.csv")
 locs <- locs[, c("location_name", "ihme_loc_id", "region_name", "super_region_name")]
@@ -362,7 +354,7 @@ lme.errors.l[variable %in% c("Median Absolute Error"), variable := "Med Abs Err"
 
 
 if (r.forecast_plots == 1) {
-  raster_pdf(paste0("visuals/figure_1_country_plots_", Sys.Date(), ".pdf"), width = 12, height = 8, res=300)
+  pdf(paste0("visuals/figure_1_country_plots_", Sys.Date(), ".pdf"), width = 12, height = 8)
   for (c.loc in locs.list.ord[deaths_cum > 10 & (nchar(ihme_loc_id == 1 | grepl(x = ihme_loc_id, pattern = "USA_"))), location_name]) {
     print(c.loc)
    

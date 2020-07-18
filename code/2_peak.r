@@ -126,7 +126,7 @@ tf[type == "loess", smooth_type := "Loess"]
 #--Graph-------
 
 if (graph.peakmethod) {
-  pdf(paste0("visuals/daily_smooths_", Sys.Date(), ".pdf"), w = 12, h = 8)
+  pdf(paste0("visuals/Supplemental_Figures_Smoothing_Daily_Deaths_", Sys.Date(), ".pdf"), w = 12, h = 8)
   loc.groups <- split(locs, ceiling(seq_along(locs) / 9))
   for (i in 1:length(loc.groups)) {
     p <- ggplot(tf[location_name %in% loc.groups[[i]]]) +
@@ -178,7 +178,7 @@ df[pf == 0, peak := ifelse(m == deaths_sm, 1, 0), by = .(location_name, model, m
 
 ## Graph - Model daily deaths and peak dates
 if (graph.peakcomparison) {
-  pdf(paste0("visuals/daily_peak_comparison_graphs_", Sys.Date(), ".pdf"), width = 12, height = 6)
+  pdf(paste0("visuals/Supplemental_Figures_Peak_Timing_", Sys.Date(), ".pdf"), width = 12, height = 6)
   
   for (.loc in loc.peaks) {
     print(.loc)
