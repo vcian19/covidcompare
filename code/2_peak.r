@@ -259,7 +259,7 @@ pf[, model_short := factor(model_short, levels = levels(model_short), ordered = 
 
 # Month of estimation
 pf[, model_month := format(model_date, format = "%b")]
-pf[, model_month := factor(model_month, levels = c("Mar", "Apr", "May", "Jun"))]
+pf[, model_month := factor(model_month, levels = c("Mar", "Apr", "May", "Jun","July"))]
 
 
 peak.stats <- function(t, by) {
@@ -285,7 +285,7 @@ if (graph.peakpv) {
   exclude.mods <- error.mod[num < 20, model_short]
   
   
-  gg1 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)]) +
+  gg1 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
     geom_tile(aes(y = wk, x = model_short, fill = mae), alpha = 1.0) +
     facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales="free_y")+
     geom_text(aes(y = wk, x = model_short, label = paste0(round(mae)))) +
@@ -311,7 +311,7 @@ if (graph.peakpv) {
   pdf(paste0("visuals/Extened_Data_Figure_4_", Sys.Date(), ".pdf"), width = 3, height = 8)
   
   
-  gg2 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)]) +
+  gg2 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
     geom_tile(aes(y = wk, x = model_short, fill = me), alpha = 1.0) +
     facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales = "free_y")+
     geom_text(aes(y = wk, x = model_short, label = paste0(round(me)))) +

@@ -10,8 +10,8 @@ pacman::p_load(data.table, tidyverse, git2r, rvest, stringr, httr, rio, ggplot2,
 root <- getwd()
 
 # set which graphs to produce
-r.pv_plots <- 1
-r.forecast_plots <- 0
+r.pv_plots <- 0
+r.forecast_plots <- 1
 
 # load data
 data <- readRDS(paste0(root, "/data/processed/data.rds"))
@@ -358,7 +358,7 @@ lme.errors.l[variable %in% c("Median Absolute Error"), variable := "Med Abs Err"
 
 
 if (r.forecast_plots == 1) {
-  pdf(paste0("visuals/figure_1_country_plots_", Sys.Date(), ".pdf"), width = 12, height = 8)
+  pdf(paste0("visuals/Supplemental_Figures_Magnitude_", Sys.Date(), ".pdf"), width = 12, height = 8)
   for (c.loc in locs.list.ord[deaths_cum > 10 & (nchar(ihme_loc_id == 1 | grepl(x = ihme_loc_id, pattern = "USA_"))), location_name]) {
     print(c.loc)
    
@@ -525,22 +525,22 @@ c.tp <- "Total Cumulative Error"
 mer.wts.l[, value := round(value, 1)]
 
 #For example, pooling errors across models released in May, the median absolute percent error (MAPE) 
-#rose from 3.8% at one week of extrapolation to 14.5% at 6 weeks
+#rose from 3.8% at one week of extrapolation to 14.8% at 6 weeks
 mer.wts.l[model_month=="May" & super_region_name == "Global" & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(1, 6), value]
 
 #Pooling across models, the MAPE at 4 weeks of extrapolation was
-#10.2% in June, as compared to 13.6% in May, 25.1% in April, and 94.9% in March
+#10.2% in June, as compared to 13.4% in May, 25.2% in April, and 94.9% in March
 prnt <- mer.wts.l[super_region_name == "Global" & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(4), c("value","model_month")]
 prnt[order(value)]
 
 #No corresponding improvement over time, however, was seen when examining weekly errors, with a
-#MAPE at 4 weeks of 67.0%, 62.5%, and 65.1% for June, May, and April, respectively
+#MAPE at 4 weeks of 66.7%, 62.3%, and 65.2% for June, May, and April, respectively
 prnt <- mer.wts.l[super_region_name == "Global" & model_short == "Pooled" & variable == c.var & err_type == "Weekly Error" & errwk %in% c(4), c("value","model_month")]
 prnt[order(model_month)]
 
 
 #For models released in June, at six weeks of forecasting, the best performing model was the IHME-MS SEIR model, 
-#with a cumulative MAPE of 10.2%, followed by LANL (11.4%) and YYG (11.5%).
+#with a cumulative MAPE of 10.2%, followed by YYG (11.3%) and LANL (12.6%)
 prnt <- mer.wts.l[model_month=="Jun"&super_region_name == "Global" & model_short != "Pooled" & variable == c.var & err_type == c.tp & errwk == 6, c("value", "model_short")]
 prnt[order(value)]
 
@@ -584,7 +584,7 @@ mer.wts.l[model_month=="May" &super_region_name %in%c("Sub-Saharan Africa","High
 
 
 #---------------------------------------------------------------------------------------
-#Geography Numbers in Table 1
+#Numbers in Table 1
 unique(data$model)
 length(unique(data[model=="ihme_cf" & nchar(ihme_loc_id)==3,location_name]))
 length(unique(data[model=="ihme_hseir" & nchar(ihme_loc_id)==3,location_name]))
@@ -597,8 +597,6 @@ length(unique(data[model=="lanl" & nchar(ihme_loc_id)==3,location_name]))
 (max(data[model=="delphi"&current==1,date]))
 (max(data[model=="imperial"&current==1,date]))
 
-
-#Save YYG errors for comparison
 
 
 
