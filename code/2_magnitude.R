@@ -550,13 +550,13 @@ prnt <- mer.wts.l[model_month=="May"&super_region_name == "Global" & model_short
 prnt[order(value)]
 
 #For models released in April, at six weeks of extrapolation, the best performance was observed for the LANL model with a
-#MAPE of 26.5%, followed by YYG at 26.7%, and the Delphi model at 29.3%.
+#MAPE of 26.5%, followed by YYG at 26.9%, and the Delphi model at 29.3%.
 prnt <- mer.wts.l[model_month=="Apr"&super_region_name == "Global" & model_short != "Pooled" & variable == c.var & err_type == c.tp & errwk == 6, c("value", "model_short")]
 prnt[order(value)]
 
 #In April, most forecasting models were largely unbiased in short term forecasts, with 
 #median percent error (MPE) values at 1 weeks of extrapolation ranging 
-#from -5.5% for LANL to +10.1% for Imperial, with a pooled MPE of +0.6%.
+#from -5.5% for LANL to +10.3% for Imperial, with a pooled MPE of +0.6%.
 c.var <- "Median Percent Error"
 prnt <- mer.wts.l[model_month=="Apr" &super_region_name == "Global" & variable == c.var & err_type == c.tp & errwk == 1, c("model_short", "value")]
 prnt[order(value)]
@@ -565,7 +565,7 @@ prnt[order(value)]
 prnt <- mer.wts.l[model_month=="Apr" &super_region_name == "Global" & variable == c.var & err_type == c.tp & errwk == 6, c("model_short", "value")]
 prnt[order(value)]
 
-#In contrast, by June, models had become relatively unbiased in longer-term forecasts, with a pooled MPE at 4 weeks of extrapolation of -0.1%. 
+#In contrast, by June, models had become relatively unbiased in longer-term forecasts, with a pooled MPE at 4 weeks of extrapolation of -0.2%. 
 prnt <- mer.wts.l[model_month=="Jun" &super_region_name == "Global" & variable == c.var & err_type == c.tp & errwk == 4, c("model_short", "value")]
 prnt[order(value)]
 
@@ -576,8 +576,8 @@ mer.wts.l[model_month=="Apr" & super_region_name == "Global" & model_short == "I
 mer.wts.l[model_month=="Jun" & super_region_name == "Global" & model_short == "Imperial" & variable == c.var & err_type == c.tp & errwk %in% c(4), value]
 
 #Looking across models, errors in cumulative mortality predictions were generally highest in Sub-Saharan Africa,
-#with a pooled-error MAPE of 42.3% at four weeks for models released in June, and 34.7% at six weeks for models released in May,
-#compared to 4.8% and 11.2% respectively  respectively for countries in the High-income region
+#with a pooled-error MAPE of 41.8% at four weeks for models released in June, and 37.5% at six weeks for models released in May,
+#compared to 4.6% and 11.1% respectively  respectively for countries in the High-income region
 c.var <- "Median Absolute Percent Error"
 mer.wts.l[model_month=="Jun" &super_region_name %in%c("Sub-Saharan Africa","High-income") & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(4), value]
 mer.wts.l[model_month=="May" &super_region_name %in%c("Sub-Saharan Africa","High-income") & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(6), value]
