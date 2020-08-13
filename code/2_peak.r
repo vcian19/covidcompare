@@ -23,15 +23,7 @@ theme <- theme_bw() + theme(
   legend.position = "top"
 )
 
-c.vals <- c(
-  "Delphi" = "#e31a1c",
-  "IHME - CF SEIR" = "#6a3d9a",
-  "IHME - Curve Fit" = "#cab2d6",
-  "IHME - MS SEIR" = "#33a02c",
-  "Los Alamos Nat Lab" = "#1f78b4",
-  "Youyang Gu" = "#ff7f00",
-  "Imperial" = "#fb9a99"
-)
+c.vals <- readRDS("data/ref/colors.rds")
 
 #--Setup------
 
@@ -270,24 +262,27 @@ peak.stats <- function(t, by) {
 error.mod <- peak.stats(pf, by = c("model_short")) %>% mutate(wk = 0) %>% data.table()
 error.m.wk <- peak.stats(pf, by = c("model_short", "model_month","wk"))%>% mutate(super_region_name = "Global") %>% data.table()
 error.m.wk.sr <- peak.stats(pf, by = c("model_short", "model_month","wk","super_region_name"))
+error.wk <- peak.stats(pf, by = c("model_short","wk"))%>% mutate(super_region_name = "Global") %>% mutate(model_month = "Total")%>% data.table()
 
 
 
 #--Graph-------------------------------------------
 
+
 if (graph.peakpv) {
-  pdf(paste0("visuals/Figure_4_", Sys.Date(), ".pdf"), width = 3, height = 8)
   
-  bar.mae <- scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 30, name = "", breaks = seq(0, 50, 25), labels = paste0(seq(0, 50, 25), " Days"), guide = guide_colorbar(barwidth = 10, barheight = .3), na.value = "white", limits = c(0, 55))
-  bar.me <- scale_fill_gradient2(high = "#ef8a62", low = "#ef8a62", mid = "#67a9cf", midpoint = 0, name = "", breaks = seq(-50, 50, 50), labels = paste0(seq(-50, 50, 50), " Days"), guide = guide_colorbar(barwidth = 10, barheight = .3), na.value = "white", limits = c(-55, 55))
+  pdf(paste0("visuals/Figure_5_", Sys.Date(), ".pdf"), width = 3, height = 4)
+  
+  bar.mae <- scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 30, name = "", breaks = seq(0, 100, 25), labels = paste0(seq(0, 100, 25), " Days"), guide = guide_colorbar(barwidth = 10, barheight = .3), na.value = "white", limits = c(0, 90))
+  bar.me <- scale_fill_gradient2(high = "#ef8a62", low = "#ef8a62", mid = "#67a9cf", midpoint = 0, name = "", breaks = seq(-50, 50, 50), labels = paste0(seq(-50, 50, 50), " Days"), guide = guide_colorbar(barwidth = 10, barheight = .3), na.value = "white", limits = c(-90, 90))
   
   # exclude models with less than 20 total locations for small sample size
-  exclude.mods <- error.mod[num < 20, model_short]
+  exclude.mods <- error.mod[num < 25, model_short]
   
   
-  gg1 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
+  gg1 <- ggplot(error.wk[!(model_short %in% exclude.mods)]) +
     geom_tile(aes(y = wk, x = model_short, fill = mae), alpha = 1.0) +
-    facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales="free_y")+
+    facet_wrap(~model_month)+
     geom_text(aes(y = wk, x = model_short, label = paste0(round(mae)))) +
     theme + 
     theme(
@@ -300,38 +295,62 @@ if (graph.peakpv) {
     xlab("") +
     labs(y = "Forecasting Weeks", title = "A) Accuracy - Median Absolute Error in Days") +
     bar.mae +
-    scale_y_continuous(breaks=seq(1,6)) +
+    scale_y_continuous(breaks=seq(1,12)) +
     scale_x_discrete(expand = c(0, 0)) #
   
+
   
   print(gg1)
   dev.off()
   
-  
-  pdf(paste0("visuals/Extened_Data_Figure_4_", Sys.Date(), ".pdf"), width = 3, height = 8)
-  
-  
-  gg2 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
-    geom_tile(aes(y = wk, x = model_short, fill = me), alpha = 1.0) +
-    facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales = "free_y")+
-    geom_text(aes(y = wk, x = model_short, label = paste0(round(me)))) +
-    theme + 
-    theme(
-      axis.text.x=element_text(angle=30,face="bold",size=10,hjust=1),
-      strip.text.x=element_text(face="bold",size=9),
-      strip.text.y=element_text(face="bold",size=9),
-      plot.title=element_text(face="bold",size=8)
-    )+
-    xlab("") +
-    labs(y = "Forecasting Weeks", title = "A) Bias - Median Error in Days") +
-    bar.me +
-    scale_y_continuous(breaks=seq(1,6)) +
-    scale_x_discrete(expand = c(0, 0)) #
-  
-  
-  print(gg2)
-  dev.off()
-  
+
+
+
+
+pdf(paste0("visuals/Supplemental_Figure_4_", Sys.Date(), ".pdf"), width = 6, height = 8)
+
+
+gg1 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
+  geom_tile(aes(y = wk, x = model_short, fill = mae), alpha = 1.0) +
+  facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales = "free_y")+
+  geom_text(aes(y = wk, x = model_short, label = paste0(round(mae)))) +
+  theme + 
+  theme(
+    axis.text.x=element_text(angle=30,face="bold",size=10,hjust=1),
+    strip.text.x=element_text(face="bold",size=9),
+    strip.text.y=element_text(face="bold",size=9),
+    plot.title=element_text(face="bold",size=10)
+  )+
+  xlab("") +
+  labs(y = "Forecasting Weeks", title = "A) Accuracy - Median Absolute Error") +
+  bar.mae +
+  scale_y_continuous(breaks=seq(1,6)) +
+  scale_x_discrete(expand = c(0, 0)) #
+
+
+
+
+gg2 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
+  geom_tile(aes(y = wk, x = model_short, fill = me), alpha = 1.0) +
+  facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales = "free_y")+
+  geom_text(aes(y = wk, x = model_short, label = paste0(round(me)))) +
+  theme + 
+  theme(
+    axis.text.x=element_text(angle=30,face="bold",size=10,hjust=1),
+    strip.text.x=element_text(face="bold",size=9),
+    strip.text.y=element_text(face="bold",size=9),
+    plot.title=element_text(face="bold",size=10)
+  )+
+  xlab("") +
+  labs(y = "Forecasting Weeks", title = "B) Bias - Median Error") +
+  bar.me +
+  scale_y_continuous(breaks=seq(1,6)) +
+  scale_x_discrete(expand = c(0, 0)) #
+
+
+grid.arrange(gg1,gg2,nrow=1)
+
+
+
+dev.off()
 }
-
-

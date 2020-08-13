@@ -12,6 +12,7 @@ Here we provide the codebase and analytical/graphing framework to collate and co
 - [Imperial College London (Imperial)](https://github.com/mrc-ide/global-lmic-reports/tree/master/)
 - [The Institute for Health Metrics and Evaluation (IHME)](http://www.healthdata.org/covid/data-downloads)
 - [The Los Alamos National Laboratory (LANL)](https://covid-19.bsvgateway.org/)
+- [SIKJalpha](https://github.com/scc-usc/ReCOVER-COVID-19)
 - [Youyang Gu (YYG)](https://github.com/youyanggu/covid19_projections/tree/master/)
 
 Details on the systematic review completed to compile the list of models are detailed in the corresponding publication. If your model is not currently included, we encourage you to message us at pyliu47@gmail.com and link to a publically accessible repo or website where they may be accessed. 
@@ -38,6 +39,9 @@ Before running code, the codebase must be initialized via `covidcompare.Rproj`.
 `code/2_peak.r`: Calculate a true date of peak daily deaths for each location and compare to the estimated peak in each model. The peak is calculated by smoothing the true daily deaths and then identifying the first maximum value in a two-week window that it is not exceeded by more than 20% in the following three weeks and does not occur within the first or last week of data. The error and absolute are error calculated and then summarized with the median across various domains.
 
 ## Updates
+
+2020-08-13
+- Added SIKJalpha (https://github.com/scc-usc/ReCOVER-COVID-19) and its historical models to the comparison framework
 
 2020-07-17
 - At the request of YYG, now using estimated cumulative daily deaths. Was previously using cumulative daily deaths created by summing estimates of daily deaths. 

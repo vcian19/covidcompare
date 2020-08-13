@@ -47,6 +47,7 @@ links.delphi <- function() {
   filelist <- unlist(lapply(content(req)$tree, "[", "path"), use.names = F) %>%
     grep("data/predicted/Global_", ., value = T)
   links <- data.table(link = filelist)
+  links <- links[!grepl("test", link)]
   links[, date := tstrsplit(link, "_")[[2]] %>% str_replace(".csv", "")]
   links[grepl("V2", link), date := tstrsplit(link, "_")[[3]] %>% str_replace(".csv", "")]
   ## Keep best version
@@ -134,8 +135,21 @@ links.imperial <- function() {
   return(links)
 }
 
+links.sikjalpha <- function() {
+  github <- "https://github.com/scc-usc/ReCOVER-COVID-19/tree/master/"
+  req <- GET("https://api.github.com/repos/scc-usc/ReCOVER-COVID-19/git/trees/master?recursive=1")
+  stop_for_status(req)
+  filelist <- unlist(lapply(content(req)$tree, "[", "path"), use.names = F)  %>%
+    grep("results/historical_forecasts/", ., value = T) %>%
+    grep("global_forecasts_deaths.csv|us_forecasts_deaths.csv", ., value = T)
+  links <- data.table(link = filelist)
+  links[, date := tstrsplit(link, "/")[[3]] %>% str_replace(".csv", "")]
+  links[, link := paste0(github, link) %>% str_replace("tree", "raw")]
+  return(links)
+}
+
 download <- function(link, model) {
-  if (model %in% c("yyg", "lanl", "delphi")) {
+  if (model %in% c("yyg", "lanl", "delphi", "sikjalpha")) {
     df <- lapply(link, function(x) {
       temp <- tempfile()
       download.file(x, temp)
@@ -178,26 +192,50 @@ download <- function(link, model) {
   return(df)
 }
 
-clean <- function(df, model) {
-  if (model == "yyg") {
+clean <- function(df, .model) {
+  if (.model=="ihme") {
+    
+  }
+  if (.model == "yyg") {
     df <- df[region %in% c("ALL", "") | country == "US"]
     df[country == "Georgia", country := "Georgia (Country)"]
     df[country == "US" & region != "", country := region]
     ## Fill in historical input data, creating cumulative deaths from actual_deaths (daily)
+    df[, predicted_total_deaths_mean := predicted_total_deaths_mean %>% as.integer()]
     df[!is.na(actual_deaths), predicted_total_deaths_mean := cumsum(actual_deaths), by=.(country, region)]
   }
-  if (model == "imperial") {
+  if (.model == "imperial") {
     df <- df[country == "Georgia", country := "Georgia (Country)"]
     df <- df[compartment == "deaths" & scenario == "Maintain Status Quo"]
   }
-  if (model == "delphi") {
+  if (.model == "delphi") {
     df <- df[Province == "None" | Country == "US"]
     df[Country == "Georgia", Country := "Georgia (Country)"]
     df[Country == "US" & Province != "None", Country := Province]
   }
-  if (model == "lanl") {
+  if (.model == "lanl") {
     if ("countries" %in% names(df)) df[countries == "Georgia", countries := "Georgia (Country)"]
     if ("state" %in% names(df)) df[!is.na(state), countries := state]
+  }
+  if (.model == "sikjalpha") {
+    df <- df[id == 59, Country := "Georgia (Country)"]
+    ## Reshape Long
+    df <- df %>% melt(., id.vars=c("Country", "id"))
+    df %>% setnames(c("Country", "variable", "value"), c("location_name", "date", "deaths"))
+    df$id <- NULL
+  }
+  if (.model %in% c("yyg", "imperial", "delphi", "lanl", "ihme")) {
+  ## Subset columns
+  cols <- db[model == .model]$cols %>%
+    strsplit(",") %>%
+    unlist() %>%
+    trimws()
+  rename <- db[model == .model]$rename %>%
+    strsplit(",") %>%
+    unlist() %>%
+    trimws()
+  df <- df %>% select(cols)
+  setnames(df, cols, rename)
   }
   return(df)
 }
@@ -214,17 +252,6 @@ update.files <- function(links, .model) {
       ## Download
       link <- links[date == .date]$link
       df <- download(link, .model) %>% clean(., .model)
-      ## Subset columns
-      cols <- db[model == .model]$cols %>%
-        strsplit(",") %>%
-        unlist() %>%
-        trimws()
-      rename <- db[model == .model]$rename %>%
-        strsplit(",") %>%
-        unlist() %>%
-        trimws()
-      df <- df %>% select(cols)
-      setnames(df, cols, rename)
       df <- df[!is.na(deaths)]
       df <- df[, model_date := .date]
       df <- df[, model := .model]
@@ -254,6 +281,7 @@ update.files(links.imperial(), "imperial")
 update.files(links.ihme(), "ihme")
 update.files(links.yyg(), "yyg")
 update.files(links.delphi(), "delphi")
+update.files(links.sikjalpha(), "sikjalpha")
 
 ## Collate everything together
 df <- lapply(db$model, function(model) {
@@ -363,6 +391,9 @@ if (new_locs %>% length() > 0) warning(paste0("unmapped locs: ", paste(unlist(ne
 loc.map <- rbind(loc.map, new_locs, fill=T) %>% unique
 export(loc.map, "data/ref/missing_locs.csv", na="")
 
+## Save JHU
+export(jhu, "data/processed/jhu.rds")
+
 jhu$location_name <- NULL
 
 ## Merge on to df
@@ -377,7 +408,11 @@ nyt <- ("data/raw/nyt/us.csv") %>%
   setnames(c("state", "deaths"), c("location_name", "nyt"))
 nyt[location_name == "Virgin Islands", location_name := "Virgin Islands, U.S."]
 nyt <- merge(nyt, locs, by = "location_name", all.x = T)
+## Save JHU
+export(nyt, "data/processed/nyt.rds")
+
 nyt$location_name <- NULL
+
 df <- merge(df, nyt, by = c("ihme_loc_id", "date"), all.x = T)
 
 #--DATA CLEANING-----------------------------------------------------------
@@ -393,8 +428,8 @@ cols <- c("deaths", "lower", "upper")
 df[model %in% c("imperial"), c(paste0(cols, "_cum")) := lapply(.SD, cumsum), .SDcols = cols, by = c("location_name", "model_date", "model")]
 
 # IHME, LANL, DELPHI are in cumulative space, create daily
-df[model %in% c("lanl", "ihme", "delphi", "yyg"), `:=` (deaths_cum = deaths, lower_cum = lower, upper_cum=upper)]
-df[model %in% c("lanl", "ihme", "delphi", "yyg"), `:=` (deaths = deaths_cum - data.table::shift(deaths_cum),
+df[model != "imperial", `:=` (deaths_cum = deaths, lower_cum = lower, upper_cum=upper)]
+df[model != "imperial", `:=` (deaths = deaths_cum - data.table::shift(deaths_cum),
                                                  lower = lower_cum - data.table::shift(lower_cum),
                                                  upper = upper_cum - data.table::shift(upper_cum)), by = .(location_name, model_date, model)]
 ## Create Truth Variable
@@ -418,16 +453,16 @@ df[model=="ihme" & model_date >= as.Date("2020-05-29"), model := "ihme_elast"]
 
 ## Set graphing order
 df[, model_short := factor(model,
-                     levels = c("delphi", "lanl", "yyg", "imperial", "ihme_cf", "ihme_hseir", "ihme_elast"),
-                     labels = c("Delphi", "LANL", "YYG", "Imperial", "IHME-CF", "IHME-CF-SEIR", "IHME-MS-SEIR"), ordered = T
+                     levels = c("delphi", "lanl", "yyg", "imperial", "sikjalpha", "ihme_cf", "ihme_hseir", "ihme_elast"),
+                     labels = c("Delphi", "LANL", "YYG", "Imperial", "SIKJalpha", "IHME-CF", "IHME-CF-SEIR", "IHME-MS-SEIR"), ordered = T
 )]
 
 
 
 
 df[, model_long := factor(model,
-                          levels =c("delphi", "lanl", "yyg", "imperial", "ihme_cf", "ihme_hseir", "ihme_elast"),
-                          labels = c("Delphi", "Los Alamos Nat Lab", "Youyang Gu", "Imperial", "IHME - Curve Fit", "IHME - CF SEIR", "IHME - MS SEIR"), ordered = T
+                          levels =c("delphi", "lanl", "yyg", "imperial", "sikjalpha", "ihme_cf", "ihme_hseir", "ihme_elast"),
+                          labels = c("Delphi", "Los Alamos Nat Lab", "Youyang Gu", "Imperial", "SIKJalpha", "IHME - Curve Fit", "IHME - CF SEIR", "IHME - MS SEIR"), ordered = T
 )]
 
 df <- df[order(model, model_date, location_name, date)]
