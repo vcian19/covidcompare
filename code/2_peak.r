@@ -23,7 +23,16 @@ theme <- theme_bw() + theme(
   legend.position = "top"
 )
 
-c.vals <- readRDS("data/ref/colors.rds")
+c.vals <- c(
+  "Delphi" = "#e31a1c",
+  "IHME - CF SEIR" = "#6a3d9a",
+  "IHME - Curve Fit" = "#cab2d6",
+  "IHME - MS SEIR" = "#33a02c",
+  "Los Alamos Nat Lab" = "#1f78b4",
+  "Youyang Gu" = "#ff7f00",
+  "Imperial" = "#fb9a99",
+  "SIKJalpha" = "#FF1493" 
+)
 
 #--Setup------
 
@@ -270,6 +279,7 @@ error.wk <- peak.stats(pf, by = c("model_short","wk"))%>% mutate(super_region_na
 
 
 if (graph.peakpv) {
+  c.wks <- 8
   
   pdf(paste0("visuals/Figure_5_", Sys.Date(), ".pdf"), width = 3, height = 4)
   
@@ -280,7 +290,7 @@ if (graph.peakpv) {
   exclude.mods <- error.mod[num < 25, model_short]
   
   
-  gg1 <- ggplot(error.wk[!(model_short %in% exclude.mods)]) +
+  gg1 <- ggplot(error.wk[!(model_short %in% exclude.mods) & wk <= c.wks]) +
     geom_tile(aes(y = wk, x = model_short, fill = mae), alpha = 1.0) +
     facet_wrap(~model_month)+
     geom_text(aes(y = wk, x = model_short, label = paste0(round(mae)))) +

@@ -291,6 +291,7 @@ df <- lapply(db$model, function(model) {
 }) %>% rbindlist(., fill = T)
 
 
+
 #--NAME ADJUSTMENTS--------------------------------------------------
 
 ## IHME Georgia naming mix-ups
@@ -397,6 +398,7 @@ export(jhu, "data/processed/jhu.rds")
 jhu$location_name <- NULL
 
 ## Merge on to df
+jhu[, date := as.Date(date)]
 df <- merge(df, jhu,  by = c("ihme_loc_id", "date"), all.x = T)
 
 
