@@ -3,6 +3,12 @@
 #### Authors:   
 - Joseph Friedman (Email: joseph.robert.friedman@gmail.com, Twitter: [@JosephRFriedman](https://twitter.com/JosephRFriedman/))
 - Patty Liu (Email: pyliu47@gmail.com, Twitter: [@pyliu47](https://twitter.com/pyliu47/))
+  
+#### Manuscript:  
+Predictive performance of international COVID-19 mortality forecasting models
+Joseph Friedman, Patrick Liu, Emmanuela Gakidou, IHME COVID-19 Model Comparison Team
+medRxiv 2020.07.13.20151233; doi: https://doi.org/10.1101/2020.07.13.20151233
+
 
 ## How to Use this Repo
 
@@ -35,10 +41,9 @@ Before running code, the codebase must be initialized via `covidcompare.Rproj`.
 
 `code/2_magnitude.R`: Generate statistics and plots comparing forecasted magnitudes of mortality from each model to observed mortality. All cumulative deaths forecasts are intercept-shifted to the true level of cumulative deaths on the date of publication. The predictive validity statistics calculated for cumulative deaths and weekly deaths are error, absolute error, percent error, and absolute percent error. The median is taken across dates of estimate publication for a given model, location, and number of weeks out from the date of model publication.  
 
-
 `code/2_peak.r`: Calculate a true date of peak daily deaths for each location and compare to the estimated peak in each model. The peak is calculated by smoothing the true daily deaths and then identifying the first maximum value in a two-week window that it is not exceeded by more than 20% in the following three weeks and does not occur within the first or last week of data. The error and absolute are error calculated and then summarized with the median across various domains.
 
-## Updates
+## Framework Updates
 
 2020-08-13
 - Added SIKJalpha (https://github.com/scc-usc/ReCOVER-COVID-19) and its historical models to the comparison framework
