@@ -34,6 +34,7 @@ data <- readRDS(paste0(root, "/data/processed/data.rds"))
 data <- data[!(location_name%in%c("Peru","Ecuador"))]
 
 
+
 # locations file
 locs <- fread("data/ref/locs_map.csv")
 locs <- locs[, c("location_name", "ihme_loc_id", "region_name", "super_region_name")]
@@ -45,6 +46,15 @@ locs.list <- locs[nchar(ihme_loc_id) == 3 | grepl(x = ihme_loc_id, pattern = "US
 cur <- data[, .(model_date = max(model_date)), by = .(model)]
 cur[, current := 1]
 data <- merge(data, cur, all.x = T, by = c("model", "model_date"))
+
+#latest total death toll from each current model on last date
+data[,max_mod_date:=max(date),by=.(model_short)]
+
+prnt <- data[current==1&date==max_mod_date&location_name=="United States",c("model_short","date","deaths_cum")]
+prnt[,deaths_cum:=paste0(round(deaths_cum/1000),"K")]
+prnt[order(-date)]
+
+
 
 # remove floating data
 data <- data[!(is.na(model))]
@@ -229,7 +239,7 @@ saveRDS(mer.wts.l, "data/processed/magnitude.rds")
 
 if (r.pv_plots == 1) {
 c.month <- "Jun"
-c.wks <- 10
+c.wks <- 12
   
 pdf(paste0("visuals/Figures_2_3_", Sys.Date(), ".pdf"), width = 6, height =9 )
 
@@ -272,37 +282,7 @@ for (c.var in c("Median Absolute Percent Error", "Median Percent Error")) {
     gg <- plot_grid(gg2,gg1,rel_heights = c(1.5,2),align='v',axis='lr',ncol=1)
     print(gg)
     
-    gg1 <- ggplot(mer.wts.l[model_short!= "Imperial" & super_region_name!="Global" & loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%c(c.month)&errwk<7], aes(x = errwk, y=value,color = model_short)) +
-      geom_line(size=1) +
-      theme_bw() +
-      facet_wrap(~srn2,scales="free_y",ncol=2) +
-      labs(y = "MAPE", x = "Forecasting Weeks") +
-      theme(
-        axis.title.x = element_text(size = 9, face = "bold"), strip.background = element_rect(fill = "white"),
-        axis.title.y = element_text(size = 9, face = "bold"), plot.title = element_text(size = 9, face = "bold"),
-        axis.text.x = element_text(size = 9, angle = 0,face = "bold"),
-        axis.text.y = element_text(size = 9, face = "bold"), legend.position = "none"
-      ) + scale_color_manual(values=c.vals)+
-      #scale_y_continuous(breaks=seq(1,100,5)) + 
-      scale_x_continuous(breaks=seq(1,100)) 
-    
-    gg2 <- ggplot(mer.wts.l[model_short!= "Imperial"&super_region_name=="Global" & loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%c(c.month)&errwk<7], aes(x = errwk, y=value,color = model_short)) +
-      geom_line(size=1) +
-      theme_bw() +
-      facet_wrap(~srn2,scales="free_y",ncol=1) +
-      labs(y = "MAPE", x = "", title = paste0(c.tp, "\n", c.var)) +
-      theme(
-        axis.title.x = element_blank(), strip.background = element_rect(fill = "white"),
-        axis.title.y = element_text(size = 9, face = "bold"), plot.title = element_text(size = 12, face = "bold"),
-        axis.text.x = element_text(size = 10, angle = 0,  face = "bold"),
-        axis.text.y = element_text(size = 9, face = "bold"), legend.position = "top"
-      ) +
-      scale_color_manual(values=c.vals) +scale_x_continuous(breaks=seq(1,100)) 
-    
-  
-    
-    gg <- plot_grid(gg2,gg1,rel_heights = c(1.5,2),align='v',axis='lr',ncol=1)
-    print(gg)
+ 
     
   
   }
@@ -503,7 +483,7 @@ if (r.forecast_plots == 1) {
     # get start date
     c.start <- min(data[location_name == c.loc & truth > 0, date]) - 8
     c.for <- max(data[location_name == c.loc & !is.na(truth), date])
-    c.end <- c.for + 96
+    c.end <- c.for + 127
     
     # Current Forecasts
     # scale y axis to 110% of non-Imperial max model value (prevent scale blowout)
@@ -685,8 +665,6 @@ length(unique(data[model=="sikjalpha" & nchar(ihme_loc_id)==3,location_name]))
 (max(data[model=="yyg"&current==1,date]))
 (max(data[model=="ihme_elast"&current==1,date]))
 (max(data[model=="sikjalpha"&current==1,date]))
-
-
 
 
 

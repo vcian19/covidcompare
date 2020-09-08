@@ -192,9 +192,19 @@ download <- function(link, model) {
   return(df)
 }
 
-clean <- function(df, .model) {
+clean <- function(df, .model, .date) {
   if (.model=="ihme") {
-    
+    ## IHME Georgia naming mix-ups
+    if (.date=="2020-06-05") df[location_name == "Georgia_two", location_name := "Georgia"]
+    ## Careful: from 2020-06-24 onwards IHME calls Georgia country and state the same name (ordered country first then state)
+    if (.date>="2020-06-24" & .date <= "2020-08-27") {
+      n <- df[location_name=="Georgia"] %>% nrow
+      df[location_name=="Georgia", location_name := rep(c("Georgia (Country)", "Georgia"), n/2)]
+    }
+    if (.date>="2020-08-27") {
+      df[location_id == 35, location_name := "Georgia (Country)"]
+      df[location_id == 533, location_name := "Georgia"]
+    }
   }
   if (.model == "yyg") {
     df <- df[region %in% c("ALL", "") | country == "US"]
@@ -251,7 +261,7 @@ update.files <- function(links, .model) {
     lapply(dates.todl, function(.date) {
       ## Download
       link <- links[date == .date]$link
-      df <- download(link, .model) %>% clean(., .model)
+      df <- download(link, .model) %>% clean(., .model, .date)
       df <- df[!is.na(deaths)]
       df <- df[, model_date := .date]
       df <- df[, model := .model]
@@ -294,12 +304,6 @@ df <- lapply(db$model, function(model) {
 
 #--NAME ADJUSTMENTS--------------------------------------------------
 
-## IHME Georgia naming mix-ups
-df[model=="ihme" & model_date == "2020-06-05" & location_name == "Georgia_two", location_name := "Georgia"]
-## Careful: from 2020-06-24 onwards IHME calls Georgia country and state the same name (ordered country first then state)
-n <- df[model=="ihme" & model_date >= "2020-06-24" & location_name=="Georgia"] %>% nrow
-df[model=="ihme" & model_date >= "2020-06-24" & location_name=="Georgia", location_name := rep(c("Georgia (Country)", "Georgia"), n/2)]
-
 ## Location name standardization
 loc.map <- fread("data/ref/missing_locs.csv") %>% unique
 df <- merge(df, loc.map, by.x = "location_name", by.y = "orig_name", all.x = T)
@@ -325,7 +329,6 @@ df <- df[!(model=="ihme" & model_date < "2020-06-05" & location_name %in% c("Bra
 
 ## Drop US run of IHME on 2020-05-29 (Deaths data static at total of 3 through 5/29)
 df <- df[!(model=="ihme" & model_date == "2020-05-29" & location_name == "United States")]
-
 
 ## A few model_dates have unexpected drop by 50% in cumulative deaths in IHME on a single day
 ## replace this with the average between the the preceding and day after
@@ -398,7 +401,9 @@ export(jhu, "data/processed/jhu.rds")
 jhu$location_name <- NULL
 
 ## Merge on to df
-jhu[, date := as.Date(date)]
+jhu[, date := as.character(date)]
+#df[,date:=as.Date(date)]
+
 df <- merge(df, jhu,  by = c("ihme_loc_id", "date"), all.x = T)
 
 
@@ -414,7 +419,7 @@ nyt <- merge(nyt, locs, by = "location_name", all.x = T)
 export(nyt, "data/processed/nyt.rds")
 
 nyt$location_name <- NULL
-
+#nyt[,date:=as.Date(date)]
 df <- merge(df, nyt, by = c("ihme_loc_id", "date"), all.x = T)
 
 #--DATA CLEANING-----------------------------------------------------------
