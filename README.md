@@ -6,8 +6,9 @@
   
 #### Manuscript:  
 Predictive performance of international COVID-19 mortality forecasting models
-Joseph Friedman, Patrick Liu, Emmanuela Gakidou, IHME COVID-19 Model Comparison Team
-medRxiv 2020.07.13.20151233; doi: https://doi.org/10.1101/2020.07.13.20151233
+Joseph Friedman, Patrick Liu, Christopher E. Troeger, Austin Carter, Robert C. Reiner JR, Ryan M. Barber, James Collins, Stephen S. Lim, David M. Pigott, Theo Vos, Simon I. Hay, Christopher J.L. Murray, Emmanuela Gakidou
+medRxiv 2020.07.13.20151233
+doi: https://doi.org/10.1101/2020.07.13.20151233
 
 
 ## How to Use this Repo
@@ -25,13 +26,15 @@ Details on the systematic review completed to compile the list of models are det
 
 ## Viz Tool
 
-Please check out our new online Viz Tool at [covidcompare.io](https://covidcompare.io), which will be updated regularly going forward. 
+![screenshot](https://i.ibb.co/RvXG63k/screenshot.png)
+
+Please check out our new online Viz Tool at [covidcompare.io](https://covidcompare.io), which will be updated regularly going forward. This was produced by 
 
 Historical comparing model performance corresponding to manuscript updates can be accessed in `visuals/`.
 
 ## Data Structure
 
-Forecasting estimates pulled from the above models are archived and named by date of publication in `data/raw`. To collate and all data, please use the function `collate_data()` which can be sourced from `_collate.r`. These data will be regularly updated daily going forward. 
+Forecasting estimates pulled from the above models are archived and named by date of publication in `data/raw`. To collate and clean the data, please use the function `collate_data()` which can be sourced from `_collate.r`. These data will be regularly updated daily going forward. 
 
 ## Code Structure
 
