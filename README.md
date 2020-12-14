@@ -31,7 +31,7 @@ Historical comparing model performance corresponding to manuscript updates can b
 
 ## Data Structure
 
-Forecasting estimates pulled from the above models are archived and named by date of publication in `data/raw`. To collate and All historic model-verions are collated and saved in `data/processed/data.rds`. These data will be regularly updated going forward. 
+Forecasting estimates pulled from the above models are archived and named by date of publication in `data/raw`. To collate and all data, please use the function `collate_data()` which can be sourced from `_collate.r`. These data will be regularly updated daily going forward. 
 
 ## Code Structure
 
