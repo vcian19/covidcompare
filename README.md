@@ -28,7 +28,7 @@ Details on the systematic review completed to compile the list of models are det
 
 ![screenshot](https://i.ibb.co/RvXG63k/screenshot.png)
 
-Please check out our new online Viz Tool at [covidcompare.io](https://covidcompare.io), which will be updated regularly going forward. This was produced by 
+Please check out our new online Viz Tool at [covidcompare.io](https://covidcompare.io), which will be updated regularly going forward. This was produced by Samir Akre ([Github](https://github.com/akre96), [Twitter](https://twitter.com/samirakre)), Joseph Freidman, and Patty Liu. 
 
 Historical comparing model performance corresponding to manuscript updates can be accessed in `visuals/`.
 
