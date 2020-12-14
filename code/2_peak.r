@@ -3,10 +3,10 @@
 # Author:  Patty Liu & Joseph Friedman
 # ##############################################################################
 
-
 ## Setup
 rm(list = ls())
-pacman::p_load(data.table, tidyverse, ggplot2, grid, gridExtra, cowplot, reldist, lubridate)
+source("code/_init.r")
+source("code/_collate.r")
 
 graph.peakmethod <- 1
 graph.peakcomparison <- 1
@@ -36,8 +36,8 @@ c.vals <- c(
 
 #--Setup------
 
-## Load
-df <- readRDS("data/processed/data.rds")
+# Load Data
+df <- collate.data()
 df[,super_region_name:=NULL]
 locs <- fread("data/ref/locs_map.csv")[, .(ihme_loc_id, super_region_name)]
 df <- merge(df, locs, by="ihme_loc_id", all.x=T)
@@ -286,8 +286,8 @@ if (graph.peakpv) {
   bar.mae <- scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 30, name = "", breaks = seq(0, 100, 25), labels = paste0(seq(0, 100, 25), " Days"), guide = guide_colorbar(barwidth = 10, barheight = .3), na.value = "white", limits = c(0, 90))
   bar.me <- scale_fill_gradient2(high = "#ef8a62", low = "#ef8a62", mid = "#67a9cf", midpoint = 0, name = "", breaks = seq(-50, 50, 50), labels = paste0(seq(-50, 50, 50), " Days"), guide = guide_colorbar(barwidth = 10, barheight = .3), na.value = "white", limits = c(-90, 90))
   
-  # exclude models with less than 20 total locations for small sample size
-  exclude.mods <- error.mod[num < 25, model_short]
+  # exclude models with less than 40 total locations for small sample size
+  exclude.mods <- error.mod[num < 40, model_short]
   
   
   gg1 <- ggplot(error.wk[!(model_short %in% exclude.mods) & wk <= c.wks]) +
@@ -308,59 +308,59 @@ if (graph.peakpv) {
     scale_y_continuous(breaks=seq(1,12)) +
     scale_x_discrete(expand = c(0, 0)) #
   
-
+  
   
   print(gg1)
   dev.off()
   
-
-
-
-
-pdf(paste0("visuals/Supplemental_Figure_4_", Sys.Date(), ".pdf"), width = 6, height = 8)
-
-
-gg1 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
-  geom_tile(aes(y = wk, x = model_short, fill = mae), alpha = 1.0) +
-  facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales = "free_y")+
-  geom_text(aes(y = wk, x = model_short, label = paste0(round(mae)))) +
-  theme + 
-  theme(
-    axis.text.x=element_text(angle=30,face="bold",size=10,hjust=1),
-    strip.text.x=element_text(face="bold",size=9),
-    strip.text.y=element_text(face="bold",size=9),
-    plot.title=element_text(face="bold",size=10)
-  )+
-  xlab("") +
-  labs(y = "Forecasting Weeks", title = "A) Accuracy - Median Absolute Error") +
-  bar.mae +
-  scale_y_continuous(breaks=seq(1,6)) +
-  scale_x_discrete(expand = c(0, 0)) #
-
-
-
-
-gg2 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
-  geom_tile(aes(y = wk, x = model_short, fill = me), alpha = 1.0) +
-  facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales = "free_y")+
-  geom_text(aes(y = wk, x = model_short, label = paste0(round(me)))) +
-  theme + 
-  theme(
-    axis.text.x=element_text(angle=30,face="bold",size=10,hjust=1),
-    strip.text.x=element_text(face="bold",size=9),
-    strip.text.y=element_text(face="bold",size=9),
-    plot.title=element_text(face="bold",size=10)
-  )+
-  xlab("") +
-  labs(y = "Forecasting Weeks", title = "B) Bias - Median Error") +
-  bar.me +
-  scale_y_continuous(breaks=seq(1,6)) +
-  scale_x_discrete(expand = c(0, 0)) #
-
-
-grid.arrange(gg1,gg2,nrow=1)
-
-
-
-dev.off()
+  
+  
+  
+  
+  pdf(paste0("visuals/Supplemental_Figure_4_", Sys.Date(), ".pdf"), width = 6, height = 8)
+  
+  
+  gg1 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
+    geom_tile(aes(y = wk, x = model_short, fill = mae), alpha = 1.0) +
+    facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales = "free_y")+
+    geom_text(aes(y = wk, x = model_short, label = paste0(round(mae)))) +
+    theme + 
+    theme(
+      axis.text.x=element_text(angle=30,face="bold",size=10,hjust=1),
+      strip.text.x=element_text(face="bold",size=9),
+      strip.text.y=element_text(face="bold",size=9),
+      plot.title=element_text(face="bold",size=10)
+    )+
+    xlab("") +
+    labs(y = "Forecasting Weeks", title = "A) Accuracy - Median Absolute Error") +
+    bar.mae +
+    scale_y_continuous(breaks=seq(1,6)) +
+    scale_x_discrete(expand = c(0, 0)) #
+  
+  
+  
+  
+  gg2 <- ggplot(error.m.wk[wk %in% 1:6  & !(model_short %in% exclude.mods)&model_month%in%c("Mar", "Apr", "May", "Jun")]) +
+    geom_tile(aes(y = wk, x = model_short, fill = me), alpha = 1.0) +
+    facet_grid(rows=vars(model_month),cols=vars(super_region_name),as.table = F,scales = "free_y")+
+    geom_text(aes(y = wk, x = model_short, label = paste0(round(me)))) +
+    theme + 
+    theme(
+      axis.text.x=element_text(angle=30,face="bold",size=10,hjust=1),
+      strip.text.x=element_text(face="bold",size=9),
+      strip.text.y=element_text(face="bold",size=9),
+      plot.title=element_text(face="bold",size=10)
+    )+
+    xlab("") +
+    labs(y = "Forecasting Weeks", title = "B) Bias - Median Error") +
+    bar.me +
+    scale_y_continuous(breaks=seq(1,6)) +
+    scale_x_discrete(expand = c(0, 0)) #
+  
+  
+  grid.arrange(gg1,gg2,nrow=1)
+  
+  
+  
+  dev.off()
 }

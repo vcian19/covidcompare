@@ -23,13 +23,15 @@ Here we provide the codebase and analytical/graphing framework to collate and co
 
 Details on the systematic review completed to compile the list of models are detailed in the corresponding publication. If your model is not currently included, we encourage you to message us at pyliu47@gmail.com and link to a publically accessible repo or website where they may be accessed. 
 
-## Visuals
+## Viz Tool
 
-Graphs comparing model performance can be accessed in `visuals`. They will be updated regularly going forward. 
+Please check out our new online Viz Tool at [covidcompare.io](https://covidcompare.io), which will be updated regularly going forward. 
+
+Historical comparing model performance corresponding to manuscript updates can be accessed in `visuals/`.
 
 ## Data Structure
 
-Forecasting estimates pulled from the above models are archived and named by date of publication in `data/raw`. All historic model-verions are collated and saved in `data/processed/data.rds`. These data will be regularly updated going forward. 
+Forecasting estimates pulled from the above models are archived and named by date of publication in `data/raw`. To collate and All historic model-verions are collated and saved in `data/processed/data.rds`. These data will be regularly updated going forward. 
 
 ## Code Structure
 
@@ -37,7 +39,7 @@ Before running code, the codebase must be initialized via `covidcompare.Rproj`.
 
 `code/0_sysreview.r` : Pull and compile an updated list of COVID-19 forecasting publications from Medrxiv and Pubmed.  
 
-`code/1_pull_data.r` : Compile all historical COVID-19 mortality projections from each of the sources included in the manuscript, as well as mortality data from the New York Times and Johns Hopkins University data repositories.
+`code/1_pull_data.r` : Update all historical COVID-19 mortality projections from each of the sources included in the manuscript, as well as mortality data from the New York Times and Johns Hopkins University data repositories.
 
 `code/2_magnitude.R`: Generate statistics and plots comparing forecasted magnitudes of mortality from each model to observed mortality. All cumulative deaths forecasts are intercept-shifted to the true level of cumulative deaths on the date of publication. The predictive validity statistics calculated for cumulative deaths and weekly deaths are error, absolute error, percent error, and absolute percent error. The median is taken across dates of estimate publication for a given model, location, and number of weeks out from the date of model publication.  
 
@@ -45,11 +47,15 @@ Before running code, the codebase must be initialized via `covidcompare.Rproj`.
 
 ## Framework Updates
 
+2020-11-19
+- Updated preprint manuscript, with new addition to the analytical framework. We now look at model performance statistics for the "most current" 4 week snapshot by forecasting period. 
+
 2020-08-13
 - Added SIKJalpha (https://github.com/scc-usc/ReCOVER-COVID-19) and its historical models to the comparison framework
 
 2020-07-17
 - At the request of YYG, now using estimated cumulative daily deaths. Was previously using cumulative daily deaths created by summing estimates of daily deaths. 
+
 
 
 

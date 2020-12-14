@@ -1,22 +1,19 @@
 # ##############################################################################
-# Purpose:  Collate versioned data for model comparison
+# Purpose:  Collate versioned data for model comparison;
 # Author:  Patty Liu & Joseph Friedman
 # Reviewer: Austin Carter
 # ##############################################################################
 
 ## Setup
 rm(list = ls())
-pacman::p_load(data.table, tidyverse, git2r, rvest, stringr, httr, rio, ggplot2, grid, gridExtra, zoo, RCurl, lubridate)
-root <- getwd()
-data.root <- paste0(root, "/data/raw/")
-db <- fread("data/ref/links.csv")
-
-loc.states <- data.table(name = state.name, abb = state.abb)
+source("code/_init.r")
 
 #--FUNCTIONS----------------------
 
+## Functions that return links for a given model shop
+
 links.ihme <- function() {
-  links <- html("http://www.healthdata.org/covid/data-downloads") %>%
+  links <- rvest::html("http://www.healthdata.org/covid/data-downloads") %>%
     html_nodes("a") %>%
     html_attr("href") %>%
     str_subset("\\.zip") %>%
@@ -37,6 +34,7 @@ links.ihme <- function() {
     format("%Y-%m-%d")
   tp <- data.table(link = "https://ihmecovid19storage.blob.core.windows.net/latest/ihme-covid19.zip", date = tp.date)
   links <- rbind(links, tp)
+  links <- unique(links)
   return(links)
 }
 
@@ -47,13 +45,12 @@ links.delphi <- function() {
   filelist <- unlist(lapply(content(req)$tree, "[", "path"), use.names = F) %>%
     grep("data/predicted/Global_", ., value = T)
   links <- data.table(link = filelist)
-  links <- links[!grepl("test", link)]
-  links[, date := tstrsplit(link, "_")[[2]] %>% str_replace(".csv", "")]
-  links[grepl("V2", link), date := tstrsplit(link, "_")[[3]] %>% str_replace(".csv", "")]
+  links <- links[!grepl("test|since100", link)]
+  links <- links[, date := str_match(link, "[0-9]{8}")]
   ## Keep best version
-  links[, version := ifelse(grepl("V2", link), 2, 1)]
-  links[, best := max(version), by=.(date)]
-  links <- links[version==best]
+  links[, n := 1:.N, by=.(date)]
+  links[, max := max(n), by=.(date)]
+  links <- links[n==max]
   links[, date := paste0(str_sub(date, 1, 4), "-", str_sub(date, 5, 6), "-", str_sub(date, 7, 9))]
   links[, link := paste0(github, link) %>% str_replace("tree", "raw")]
   return(links)
@@ -76,41 +73,46 @@ links.yyg <- function() {
 }
 
 links.lanl <- function() {
+  ## Get previous dates currently downloaded
   today <- Sys.Date()
   prev.dates <- list.files("data/raw/lanl/") %>% gsub(".csv", "", .)
-  last <- max(prev.dates %>% as.Date) 
-  seq <- seq.Date(last + 1, today, by = "day") %>% format("%Y-%m-%d")
-  dates <- c(seq, prev.dates)
-  ## Global
-  links1 <- paste0("https://covid-19.bsvgateway.org/forecast/global/files/", dates, "/deaths/", dates, "_deaths_quantiles_global_website.csv")
-  ## US
-  links2 <- paste0("https://covid-19.bsvgateway.org/forecast/us/files/", dates, "/deaths/", dates, "_deaths_quantiles_us_website.csv")
-  ## US Old
-  dates <- c("2020-04-22", "2020-04-19", "2020-04-15", "2020-04-12")
-  links3 <- paste0("https://covid-19.bsvgateway.org/forecast/us/files/", dates, "/deaths/", dates, "_deaths_quantiles_us.csv")
-  check <- c(links1, links2, links3)
-  live <- lapply(check, function(x) {
-    date <- x %>%
-      str_split("/") %>%
-      nth(1) %>%
-      nth(7) %>%
-      as.Date()
-    if (date > last ) {
-      return(ifelse(tryCatch(url.exists(x)), x, NA))
-    }
-    if (date <= last) {
-      return(x)
-    }
-  }) %>%
-    unlist() %>%
-    na.omit()
-  dates <- lapply(live, function(x) {
-    x %>%
-      str_split("/") %>%
-      nth(1) %>%
-      nth(7)
-  }) %>% unlist()
-  links <- data.table(link = live, date = dates)
+  if (length(last)==0) {
+    last <- "2020-04-12"
+  } else {
+    last <- max(prev.dates %>% as.Date) 
+  }
+  ## Sequence through dates until today
+  new <- seq.Date(last + 1, today, by = "day") %>% format("%Y-%m-%d")
+  all <- c(new, prev.dates)
+  
+  ## Turn this into a list of links
+  links <- data.table(date=all)
+  links[date <= "2020-04-22", us := paste0("https://covid-19.bsvgateway.org/forecast/us/", date, "/files/", date, "_deaths_quantiles_us.csv")]
+  links[date > "2020-04-22" & date < "2020-11-01", `:=` (
+    global = paste0("https://covid-19.bsvgateway.org/forecast/global/", date, "/files/", date, "_deaths_quantiles_global_website.csv"),
+    us = paste0("https://covid-19.bsvgateway.org/forecast/us/", date, "/files/", date, "_deaths_quantiles_us_website.csv")
+  )]
+  links[date >= "2020-11-01", `:=` (
+    global = paste0("https://covid-19.bsvgateway.org/forecast/global/", date, "/files/",date,"_global_cumulative_daily_deaths_website.csv"),
+    us = paste0("https://covid-19.bsvgateway.org/forecast/us/", date, "/files/",date,"_us_cumulative_daily_deaths_website.csv"),
+    global_daily = paste0("https://covid-19.bsvgateway.org/forecast/global/", date, "/files/",date,"_global_incidence_daily_deaths_website.csv"),
+    us_daily = paste0("https://covid-19.bsvgateway.org/forecast/us/", date, "/files/",date,"_us_incidence_daily_deaths_website.csv")
+  )]
+  
+  links <- links %>% melt(., id.var="date", variable.name="loc", value.name="link")
+  links <- links[!is.na(link)]
+  links[, prev := ifelse(date %in% prev.dates, 1, 0)]
+  
+  ## Check new links
+  check <- links[date%in%new]$link
+  for (.link in check) {
+    live <- tryCatch(url.exists(.link))
+    if (!live) links <- links[link!=.link]
+  }
+  
+  ## Return list of links
+  links <- links[, .(date, link)]
+  
   return(links)
 }
 
@@ -130,7 +132,7 @@ links.imperial <- function() {
   links[, version := gsub(".csv.zip", "", version)]
   links[, `:=`(flag = .N > 1, max = version %>% max()), by = "date"]
   links <- links[!(flag == 1 & version != max)]
-  links <- links %>% select(!c("version", "flag", "max"))
+  links <- links[, .(link, date)]
   links <- rbind(links)
   return(links)
 }
@@ -145,8 +147,13 @@ links.sikjalpha <- function() {
   links <- data.table(link = filelist)
   links[, date := tstrsplit(link, "/")[[3]] %>% str_replace(".csv", "")]
   links[, link := paste0(github, link) %>% str_replace("tree", "raw")]
+  ## Issue with a few files
+  links <- links[date!="2020-10-05"]
   return(links)
 }
+
+
+## Download, based on file structure for a given model shop
 
 download <- function(link, model) {
   if (model %in% c("yyg", "lanl", "delphi", "sikjalpha")) {
@@ -155,6 +162,17 @@ download <- function(link, model) {
       download.file(x, temp)
       df <- temp %>% fread()
       unlink(temp)
+      return(df)
+    }) %>% rbindlist(., fill = T)
+  }
+  if (model %in% "lanl") {
+    df <- lapply(link, function(x) {
+      temp <- tempfile()
+      download.file(x, temp)
+      df <- temp %>% fread()
+      unlink(temp)
+      file <- ifelse(grepl("cumulative", x), "cumulative", "daily")
+      df[, type := file]
       return(df)
     }) %>% rbindlist(., fill = T)
   }
@@ -174,14 +192,14 @@ download <- function(link, model) {
     download.file(link, temp1)
     unzip(zipfile = temp1, exdir = temp2)
     files <- list.files(temp2, full.name = T, recursive = T)
-    if (grepl("Reference_", files) %>% any()) {
-      df <- files %>%
-        grep("Reference_", ., value = T) %>%
-        grep(".csv", ., value = T) %>%
-        fread()
+    if (grepl("reference|hospitalization", tolower(files)) %>% any()) {
+      files <- files %>% 
+        grep("reference|hospitalization", ., value = T) %>%
+        grep(".csv", ., value = T) 
+      if (length(files)>1) files <- files %>% grep("reference_hosp", ., value=T)
+      df <- fread(files)
     } else {
       df <- files %>%
-        grep("ospital|ihme", ., value = T) %>%
         grep(".csv", ., value = T) %>%
         fread()
     }
@@ -192,8 +210,9 @@ download <- function(link, model) {
   return(df)
 }
 
-clean <- function(df, .model, .date) {
-  if (.model=="ihme") {
+## Apply basic column name standardization and location mapping for Georgia (state) and Georgia (country)
+
+clean.ihme <- function(df, .date){
     ## IHME Georgia naming mix-ups
     if (.date=="2020-06-05") df[location_name == "Georgia_two", location_name := "Georgia"]
     ## Careful: from 2020-06-24 onwards IHME calls Georgia country and state the same name (ordered country first then state)
@@ -205,35 +224,62 @@ clean <- function(df, .model, .date) {
       df[location_id == 35, location_name := "Georgia (Country)"]
       df[location_id == 533, location_name := "Georgia"]
     }
-  }
-  if (.model == "yyg") {
-    df <- df[region %in% c("ALL", "") | country == "US"]
-    df[country == "Georgia", country := "Georgia (Country)"]
-    df[country == "US" & region != "", country := region]
-    ## Fill in historical input data, creating cumulative deaths from actual_deaths (daily)
-    df[, predicted_total_deaths_mean := predicted_total_deaths_mean %>% as.integer()]
-    df[!is.na(actual_deaths), predicted_total_deaths_mean := cumsum(actual_deaths), by=.(country, region)]
-  }
-  if (.model == "imperial") {
-    df <- df[country == "Georgia", country := "Georgia (Country)"]
+  return(df)
+}
+
+clean.yyg <- function(df, .date) {
+  df <- df[region %in% c("ALL", "") | country == "US"]
+  df[country == "Georgia", country := "Georgia (Country)"]
+  df[country == "US" & region != "", country := region]
+  ## Fill in historical input data, creating cumulative deaths from actual_deaths (daily)
+  df[, predicted_total_deaths_mean := predicted_total_deaths_mean %>% as.integer()]
+  df[!is.na(actual_deaths), predicted_total_deaths_mean := cumsum(actual_deaths), by=.(country, region)]
+  return(df)
+}
+
+clean.imperial <- function(df, .date) {
+  df <- df[country == "Georgia", country := "Georgia (Country)"]
+  if ("cumulative_deaths" %in% unique(df$compartment)) {
+    df <- df[, type := compartment]
+    df[type=="cumulative_deaths", type := "cumulative"]; df[type=="deaths", type := "daily"]
+    df <- df[type %in% c("cumulative", "daily") & scenario == "Maintain Status Quo"]
+    
+  } else {
+    ## Create cumulative deaths
     df <- df[compartment == "deaths" & scenario == "Maintain Status Quo"]
+    cols <- c("y_025", "y_mean", "y_975")
+    df <- df[, (cols) := lapply(.SD, cumsum), .SDcols=cols, by="country"]
   }
-  if (.model == "delphi") {
+  return(df)
+}
+
+clean.delphi <- function(df, .date) {
     df <- df[Province == "None" | Country == "US"]
     df[Country == "Georgia", Country := "Georgia (Country)"]
     df[Country == "US" & Province != "None", Country := Province]
-  }
-  if (.model == "lanl") {
-    if ("countries" %in% names(df)) df[countries == "Georgia", countries := "Georgia (Country)"]
-    if ("state" %in% names(df)) df[!is.na(state), countries := state]
-  }
-  if (.model == "sikjalpha") {
-    df <- df[id == 59, Country := "Georgia (Country)"]
-    ## Reshape Long
-    df <- df %>% melt(., id.vars=c("Country", "id"))
-    df %>% setnames(c("Country", "variable", "value"), c("location_name", "date", "deaths"))
-    df$id <- NULL
-  }
+  return(df)
+}
+
+clean.lanl <- function(df, .date) {
+  if ("countries" %in% names(df)) df[countries == "Georgia", countries := "Georgia (Country)"]
+  if ("big_group" %in% names(df)) df[!is.na(big_group) & name=="Georgia", name := "Georgia (Country)"]
+  if ("state" %in% names(df)) df[!is.na(state), countries := state]
+  if ("name" %in% names(df)) df %>% setnames("name", "countries")
+  if ("date" %in% names(df)) df %>% setnames("date", "dates")
+  ## Make wide so daily/cumulative
+  return(df)
+}
+
+clean.sikjalpha <- function(df, .date) {
+  df <- df[id == 59, Country := "Georgia (Country)"]
+  ## Reshape Long
+  df <- df %>% melt(., id.vars=c("Country", "id"))
+  df %>% setnames(c("Country", "variable", "value"), c("location_name", "date", "deaths"))
+  df$id <- NULL
+  return(df)
+}
+
+clean.cols <- function(df, .model) {
   if (.model %in% c("yyg", "imperial", "delphi", "lanl", "ihme")) {
   ## Subset columns
   cols <- db[model == .model]$cols %>%
@@ -247,107 +293,96 @@ clean <- function(df, .model, .date) {
   df <- df %>% select(cols)
   setnames(df, cols, rename)
   }
+  if(!("lower" %in% names(df))) df[, `:=` (lower = NA, upper = NA)]
   return(df)
 }
 
+clean.location_name <- function(df) {
+  ## Location name standardization
+  df <- merge(df, loc.map, by.x = "location_name", by.y = "orig_name", all.x = T)
+  df[!is.na(new_name), location_name := new_name]
+  df <- df[location_name != "drop"] ## Drop subnationals
+  df$new_name <- NULL
+  ## Manual Edits
+  df[grepl("d'Ivoire", location_name), location_name := "Cote d'Ivoire"]
+  
+  ## Attempt to map locations onto IHME standard set
+  locs <- loc.ihme[level==3 | grepl("USA_", ihme_loc_id), c("location_name", "ihme_loc_id")]
+  df <- merge(df, locs, by = "location_name", all.x = T)
+  
+  ## Save non-mapped locations
+  new_locs <- data.table(orig_name = df[is.na(ihme_loc_id)]$location_name %>% unique())
+  if (new_locs %>% length() > 0)  {
+    loc.map <- rbind(loc.map, new_locs, fill=T) %>% unique
+    export(loc.map, "data/ref/locs_missing.csv", na="")
+  }
+  return(df)
+}
+
+dupe.check <- function(df) {
+  if (any(duplicated(df[, .(date, ihme_loc_id)]))) stop("Duplicates in ihme_loc_id, date")
+}
+
+make.wide <- function(df) {
+  df.daily <- df[type=="daily"]; df.daily$type <- NULL
+  df <- df[type=="cumulative"]; df$type <- NULL
+  df.daily %>% setnames(c("deaths", "lower", "upper"), c("daily", "daily_lower", "daily_upper"))
+  df <- merge(df, df.daily, by=c("location_name", "date", "ihme_loc_id"), all=T)
+}
 
 #------------------------
 
+## Function to download and clean forecasts for a given model shop
 update.files <- function(links, .model) {
-  output <- paste0(data.root, "/", .model, "/")
-  dates.exist <- list.files(output) %>% str_replace(".csv", "")
-  dates.todl <- setdiff(links$date, dates.exist)
+  output <- paste0("data/raw/", .model, "/")
+  if (length(list.files(output))>0) {
+    dates.exist <- list.files(output) %>% str_replace(".csv", "")
+    dates.todl <- setdiff(links$date, dates.exist)
+  } else {
+    dates.todl <- links$date
+  }
   if (length(dates.todl) > 0) {
-    lapply(dates.todl, function(.date) {
+    for (.date in dates.todl) {
+      print(paste0("Updating: ", .model, " ", .date))
       ## Download
       link <- links[date == .date]$link
-      df <- download(link, .model) %>% clean(., .model, .date)
+      df <- download(link, .model) 
+      ## Specific model shop cleaning
+      df <- do.call(paste0("clean.", .model), list(df, .date))
+      ## Column name cleaning
+      df <- clean.cols(df, .model)
+      ## Clean location_name
+      df <- clean.location_name(df)
+      ## Make wide if has daily
+      if ("type" %in% names(df)) df <- make.wide(df)
+      dupe.check(df)
+      ## Create date, models cols
       df <- df[!is.na(deaths)]
       df <- df[, model_date := .date]
       df <- df[, model := .model]
+      ## Delete data prior to model_date
+      df <- df[as.Date(date) >= as.Date(model_date)]
+      df %>% setcolorder(c("model", "model_date", "location_name", "ihme_loc_id", "date", "deaths", "lower", "upper"))
       ## Save
       export(df, paste0(output, .date, ".csv"))
-      print(paste0("Updating ", .model, " ", .date))
-    })
+    }
   }
 }
 
+#--UPDATE JHU DATA-------------------------------------------------
 
-#--UPDATE DATA--------------------------------------------------
-
+max.jhu <- readRDS("data/processed/jhu.rds")$date %>% max
+if (Sys.Date() > max.jhu) {
 ## Update JHU Data
 "https://github.com/CSSEGISandData/COVID-19/raw/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv" %>%
-  download.file(., paste0(data.root, "/jhu/global.csv"))
+  download.file(., "data/raw/jhu/global.csv")
 
 "https://github.com/CSSEGISandData/COVID-19/raw/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_US.csv" %>%
-  download.file(., paste0(data.root, "/jhu/us.csv"))
+  download.file(., "data/raw/jhu/us.csv")
 
-## Update NYTimes Data
-"https://github.com/nytimes/covid-19-data/raw/master/us-states.csv" %>% download.file(., paste0(data.root, "/nyt/us.csv"))
-
-## Pull modeled estimates
-update.files(links.lanl(), "lanl")
-update.files(links.imperial(), "imperial")
-update.files(links.ihme(), "ihme")
-update.files(links.yyg(), "yyg")
-update.files(links.delphi(), "delphi")
-update.files(links.sikjalpha(), "sikjalpha")
-
-## Collate everything together
-df <- lapply(db$model, function(model) {
-  path <- paste0(data.root, "/", model)
-  files <- list.files(path, full.name = T)
-  df <- lapply(files, fread) %>% rbindlist(., fill = T)
-}) %>% rbindlist(., fill = T)
-
-
-
-#--NAME ADJUSTMENTS--------------------------------------------------
-
-## Location name standardization
-loc.map <- fread("data/ref/missing_locs.csv") %>% unique
-df <- merge(df, loc.map, by.x = "location_name", by.y = "orig_name", all.x = T)
-df[!is.na(new_name), location_name := new_name]
-df <- df[location_name != "drop"] ## Drop subnationals
-df$new_name <- NULL
-## Manual Edits
-df[grepl("d'Ivoire", location_name), location_name := "Cote d'Ivoire"]
-
-## Attempt to map locations onto IHME standard set
-locs <- fread("data/ref/locs_map.csv")
-locs <- locs[level==3 | grepl("USA_", ihme_loc_id), c("location_name", "ihme_loc_id")]
-df <- merge(df, locs, by = "location_name", all.x = T)
-
-## Save non-mapped locations
-new_locs <- data.table(orig_name = df[is.na(ihme_loc_id)]$location_name %>% unique())
-if (new_locs %>% length() > 0) warning(paste0("unmapped locs: ", paste(unlist(new_locs), collapse = ", ")))
-loc.map <- rbind(loc.map, new_locs, fill=T) %>% unique
-export(loc.map, "data/ref/missing_locs.csv", na="")
-
-## Drop Mexico and Brazil in IHME on dates where wasn't reporting for full country
-df <- df[!(model=="ihme" & model_date < "2020-06-05" & location_name %in% c("Brazil", "Mexico"))]
-
-## Drop US run of IHME on 2020-05-29 (Deaths data static at total of 3 through 5/29)
-df <- df[!(model=="ihme" & model_date == "2020-05-29" & location_name == "United States")]
-
-## A few model_dates have unexpected drop by 50% in cumulative deaths in IHME on a single day
-## replace this with the average between the the preceding and day after
-
-df[location_name=="Italy" & model == "ihme" & model_date %in% c("2020-06-29", "2020-06-25", "2020-06-24", "2020-07-07"), temp := (shift(deaths, 1) + shift(deaths, -1))/2]
-df[location_name=="Italy" & model == "ihme" & model_date %in% c("2020-06-29", "2020-06-25", "2020-06-24", "2020-07-07") & date == "2020-05-24", `:=` (deaths=temp, lower=temp, upper=temp)]
-
-df[location_name=="Spain" & model == "ihme" & model_date %in% c("2020-07-07", "2020-06-29", "2020-06-25", "2020-06-24", "2020-06-10", "2020-06-08", "2020-04-17"), temp := (shift(deaths, 1) + shift(deaths, -1))/2]
-df[location_name=="Spain" & model == "ihme" & model_date %in% c("2020-07-07", "2020-06-29", "2020-06-25", "2020-06-24", "2020-06-10", "2020-06-08", "2020-04-17") & date == "2020-05-24", `:=` (deaths=temp, lower=temp, upper=temp)]
-
-df[location_name=="Canada" & model == "ihme" & model_date %in% c("2020-07-07"), temp := (shift(deaths, 2) + shift(deaths, -2))/2]
-df[location_name=="Canada" & model == "ihme" & model_date %in% c("2020-07-07") & date %in% c("2020-06-26", "2020-06-27"), `:=` (deaths=temp, lower=temp, upper=temp)]
-
-df$temp <- NULL
-
-#--JHU DATA CLEAN--------------------------------------------------
 
 ## Load JHU data
-jhu <- paste0(data.root, "/jhu/global.csv") %>% fread()
+jhu <- paste0("data/raw/jhu/global.csv") %>% fread()
 cols <- names(jhu)[5:length(names(jhu))]
 
 ## Aggregate up for Australia, China, Canada by province
@@ -378,105 +413,61 @@ jhu <- rbind(jhu, tf)
 jhu[, date := as.Date(date, format = c("%m/%d/%y")) %>% format("%Y-%m-%d")]
 
 ## Location name standardization
-loc.map <- fread("data/ref/missing_locs.csv") %>% unique
+loc.map <- fread("data/ref/locs_missing.csv") %>% unique
 jhu <- merge(jhu, loc.map, by.x = "location_name", by.y = "orig_name", all.x = T)
 jhu[!is.na(new_name), location_name := new_name]
 jhu <- jhu[location_name != "drop"] ## Drop subnationals
 jhu[, c("new_name") := NULL]
 
 ## Attempt to map locations onto IHME standard set
-locs <- fread("data/ref/locs_map.csv")
+locs <- fread("data/ref/locs_ihme.csv")
 locs <- locs[level==3 | grepl("USA_", ihme_loc_id), c("location_name", "ihme_loc_id")]
 jhu <- merge(jhu, locs, by = "location_name", all.x = T)
 
 ## Save non-mapped locations
 new_locs <- data.table(orig_name = jhu[is.na(ihme_loc_id)]$location_name %>% unique())
-if (new_locs %>% length() > 0) warning(paste0("unmapped locs: ", paste(unlist(new_locs), collapse = ", ")))
-loc.map <- rbind(loc.map, new_locs, fill=T) %>% unique
-export(loc.map, "data/ref/missing_locs.csv", na="")
+if (new_locs %>% length() > 0) {
+  warning(paste0("unmapped locs: ", paste(unlist(new_locs), collapse = ", ")))
+  loc.map <- rbind(loc.map, new_locs, fill=T) %>% unique
+  export(loc.map, "data/ref/locs_missing.csv", na="")
+}
 
 ## Save JHU
+jhu[, date := as.Date(date)]
 export(jhu, "data/processed/jhu.rds")
+}
 
-jhu$location_name <- NULL
-
-## Merge on to df
-jhu[, date := as.character(date)]
-#df[,date:=as.Date(date)]
-
-df <- merge(df, jhu,  by = c("ihme_loc_id", "date"), all.x = T)
-
-
-#--NYT DATA CLEAN-----------------------------------------------------------
+#--UPDATE NYTIMES DATA----------------------------------------------------------
+max.nyt <- readRDS("data/processed/nyt.rds")$date %>% max
+if (Sys.Date() > max.nyt) {
+## Update NYTimes Data
+"https://github.com/nytimes/covid-19-data/raw/master/us-states.csv" %>% 
+  download.file(., paste0("data/raw/nyt/us.csv"))
 
 nyt <- ("data/raw/nyt/us.csv") %>%
   fread() %>%
   select(date, state, deaths) %>%
   setnames(c("state", "deaths"), c("location_name", "nyt"))
 nyt[location_name == "Virgin Islands", location_name := "Virgin Islands, U.S."]
+locs <- fread("data/ref/locs_ihme.csv")
 nyt <- merge(nyt, locs, by = "location_name", all.x = T)
 ## Save JHU
+nyt[, date := as.Date(date)]
 export(nyt, "data/processed/nyt.rds")
+}
+#--UPDATE FORECAST DATA--------------------------------------------------
 
-nyt$location_name <- NULL
-#nyt[,date:=as.Date(date)]
-df <- merge(df, nyt, by = c("ihme_loc_id", "date"), all.x = T)
-
-#--DATA CLEANING-----------------------------------------------------------
-
-## Drop if no model
-df <- df[!(is.na(model))]
-
-# If starts of timeseries are missing 0s
-df[is.na(deaths), deaths := 0]
-
-## Convert imperial from daily to cumulative space
-cols <- c("deaths", "lower", "upper")
-df[model %in% c("imperial"), c(paste0(cols, "_cum")) := lapply(.SD, cumsum), .SDcols = cols, by = c("location_name", "model_date", "model")]
-
-# IHME, LANL, DELPHI are in cumulative space, create daily
-df[model != "imperial", `:=` (deaths_cum = deaths, lower_cum = lower, upper_cum=upper)]
-df[model != "imperial", `:=` (deaths = deaths_cum - data.table::shift(deaths_cum),
-                                                 lower = lower_cum - data.table::shift(lower_cum),
-                                                 upper = upper_cum - data.table::shift(upper_cum)), by = .(location_name, model_date, model)]
-## Create Truth Variable
-df[grepl(x = ihme_loc_id, pattern = "USA_"), truth := nyt]
-df[is.na(truth), truth := jhu]
-
-# Set date format
-dates <- data.table(date = c(df$date %>% unique, df$model_date %>% unique)) %>% unique
-dates[, date.f := as.Date(date)]
-df <- merge(df, dates, by="date", all.x=T)
-df[, date := date.f]; df$date.f <- NULL
-df <- merge(df, dates, by.x="model_date", by.y="date", all.x=T)
-df[, model_date := date.f]; df$date.f <- NULL
-
-## Categorize IHME Models
-df[model=="ihme" & model_date <= as.Date("2020-04-29"), model := "ihme_cf"]
-df[model=="ihme" & model_date >= as.Date("2020-05-04") & model_date <= as.Date("2020-05-26") , model := "ihme_hseir"]
-df[model=="ihme" & model_date >= as.Date("2020-05-29"), model := "ihme_elast"]
-
-## Model names
-
-## Set graphing order
-df[, model_short := factor(model,
-                     levels = c("delphi", "lanl", "yyg", "imperial", "sikjalpha", "ihme_cf", "ihme_hseir", "ihme_elast"),
-                     labels = c("Delphi", "LANL", "YYG", "Imperial", "SIKJalpha", "IHME-CF", "IHME-CF-SEIR", "IHME-MS-SEIR"), ordered = T
-)]
+## Update forecast estimates
+update.files(links.lanl(), "lanl")
+update.files(links.imperial(), "imperial")
+tryCatch(update.files(links.ihme(), "ihme"), error=function(x) print("ihme error"))
+update.files(links.yyg(), "yyg")
+update.files(links.delphi(), "delphi")
+update.files(links.sikjalpha(), "sikjalpha")
 
 
 
 
-df[, model_long := factor(model,
-                          levels =c("delphi", "lanl", "yyg", "imperial", "sikjalpha", "ihme_cf", "ihme_hseir", "ihme_elast"),
-                          labels = c("Delphi", "Los Alamos Nat Lab", "Youyang Gu", "Imperial", "SIKJalpha", "IHME - Curve Fit", "IHME - CF SEIR", "IHME - MS SEIR"), ordered = T
-)]
 
-df <- df[order(model, model_date, location_name, date)]
 
-## Super Region 
-locs <- fread("data/ref/locs_map.csv")
-locs <- locs[level==3 | grepl("USA_", ihme_loc_id), c("location_name", "ihme_loc_id","super_region_name")]
-df <- merge(df, locs, by = c("location_name","ihme_loc_id"), all.x = T)
 
-saveRDS(df, "data/processed/data.rds")

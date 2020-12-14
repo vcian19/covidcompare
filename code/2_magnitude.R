@@ -6,16 +6,15 @@
 
 ## Setup
 rm(list = ls())
-pacman::p_load(data.table, tidyverse, git2r, rvest, stringr, httr, rio, ggplot2, grid, gridExtra, cowplot, reldist, rasterpdf,lubridate)
-root <- getwd()
+source("code/_init.r")
+source("code/_collate.r")
 
 # set which graphs to produce
-r.pv_plots <- 1
-r.forecast_plots <- 0
+graph <- 0 ## Any graph
+r.forecast_plots <- 0 ## Country specific forecast plots (Figure 1)
+number.plug <- 0
 
 # Plot Colors
-c.vals <- readRDS("data/ref/colors.rds")
-
 c.vals <- c(
   "Delphi" = "#e31a1c",
   "IHME - CF SEIR" = "#6a3d9a",
@@ -27,19 +26,19 @@ c.vals <- c(
   "SIKJalpha" = "#FF1493" 
 )
 
-# load data
-data <- readRDS(paste0(root, "/data/processed/data.rds"))
+#--DATA SETUP-------------------------------------------------
 
-#drop Ecuador and Peru from framework given known issues in data
+# Load Data
+data <- collate.data()
+
+# Drop Ecuador and Peru from framework given known issues in data
 data <- data[!(location_name%in%c("Peru","Ecuador"))]
 
+# Remove floating data
+data <- data[!(is.na(model))]
 
-
-# locations file
-locs <- fread("data/ref/locs_map.csv")
-locs <- locs[, c("location_name", "ihme_loc_id", "region_name", "super_region_name")]
-
-# list locations for which we hope to make estimates
+# Locations for which we will estimate
+locs <- fread("data/ref/locs_ihme.csv")[, c("location_name", "ihme_loc_id", "region_name", "super_region_name")]
 locs.list <- locs[nchar(ihme_loc_id) == 3 | grepl(x = ihme_loc_id, pattern = "USA_")]
 
 # Get most current run
@@ -47,79 +46,64 @@ cur <- data[, .(model_date = max(model_date)), by = .(model)]
 cur[, current := 1]
 data <- merge(data, cur, all.x = T, by = c("model", "model_date"))
 
-#latest total death toll from each current model on last date
+# Latest total death toll from each current model on last date
 data[,max_mod_date:=max(date),by=.(model_short)]
 
-prnt <- data[current==1&date==max_mod_date&location_name=="United States",c("model_short","date","deaths_cum")]
-prnt[,deaths_cum:=paste0(round(deaths_cum/1000),"K")]
-prnt[order(-date)]
-
-
-
-# remove floating data
-data <- data[!(is.na(model))]
-
-# add first and last model date by location-model
+# Add first and last model date by location-model
 data[, min_model_date := min(model_date, na.rm = T), by = .(location_name, model)]
 data[, max_model_date := max(model_date, na.rm = T), by = .(location_name, model)]
 
-# last data point in truth
+# Last data point in truth
 lst.truth <- max(data[!is.na(truth), date], na.rm = T)
 
-# identify points at n weeks out from model_date to predict
+# Identify points at n weeks out from model_date to predict
 for (i in seq(0, 12)) {
   data[date == model_date + 7 * i, errwk := i]
+  ## Create flag for 4 week window
+  max.date <- data[errwk==i & !is.na(truth)]$model_date %>% max
+  data[errwk==i & !is.na(truth) & model_date >= max.date-28, wkflag := 1]
 }
+data[is.na(wkflag), wkflag := 0]
 
-# create timeshfited cum_deaths series
+# Create timeshfited cum_deaths series
 shifts <- data[date == model_date]
 shifts[, shift := truth - deaths_cum]
 shifts <- shifts[, c("location_name", "model", "model_date", "shift")] %>% unique()
 data <- merge(data, shifts, by = c("location_name", "model", "model_date"), all.x = T)
 data[!is.na(shift), deaths_cum_shifted := deaths_cum + shift]
 
-# drop points in past that plot strangely due to shifting data formatting
-data <- data[!(model_long == "IHME - MS SEIR" & model_date == "2020-05-29" & location_name == "United States")]
-
-#model month
-data[, model_month := format(model_date, format = "%b")]
-
+# Model month
+data[, model_month := format(model_date, format = "%b, %Y")]
 data[, model_week := format(model_date, format = "%W")]
 
-
-#calculate number of model iterations per month
+# Calculate number of model iterations per month
 data[,iter_num:=uniqueN(model_date),by=.(model,model_month)]
+
+#--CALCULATE ERROR-----------------------------------
 
 # calculate error - no missings, and more than 1 model iteration for the month in question
 errors <- data[!is.na(errwk) & !is.na(truth)&iter_num>1]
 errors[, error := deaths_cum_shifted - truth]
 
-# weekly error
+# Weekly error
 errors <- errors[order(location_name, model, model_date, errwk)]
 errors[, truth_wk := truth - shift(truth), by = .(location_name, model, model_date)]
 errors[, deaths_cum_shifted_wk := deaths_cum_shifted - shift(deaths_cum_shifted), by = .(location_name, model, model_date)]
 errors[, wkly_error := deaths_cum_shifted_wk - truth_wk]
 errors <- errors[errwk != 0]
 
-# make template to use in visualizing overlap
-errors[, present := 1]
-template <- data.table(expand.grid(location_name = locs.list$location_name, errwk = seq(1, 6), model_short = unique(errors$model_short)))
-template <- merge(template, errors[!is.na(error)], all.x = T, by = c("location_name", "errwk", "model_short"))
-template[is.na(present), present := 0]
-
-
 # Error stats by location-model-errwk-model_date
 errors[, abs_error := abs(error)]
 errors[, per_error := (error / truth) * 100]
 errors[, abs_per_error := abs(per_error)]
 
-#weekly
+# Errors stats by weekly Weekly
 errors[, wkly_abs_error := abs(wkly_error)]
 errors[, wkly_per_error := (wkly_error / truth_wk) * 100]
 errors[, wkly_abs_per_error := abs(wkly_per_error)]
 
-
 #----collapse to location specific errors for Figure 1 and Other Country Specific Plots------------------------------------------------------------------------
+
 # cumulative
 lme.errors <- errors[, .(
   me = median(error, na.rm = T),
@@ -134,9 +118,6 @@ lme.errors.l[variable == "mape", variable := "Median Absolute Percent Error"]
 lme.errors.l[variable == "me", variable := "Median Error"]
 lme.errors.l[variable == "mpe", variable := "Median Percent Error"]
 lme.errors.l[variable == "mae", variable := "Median Absolute Error"]
-
-lme.errors.l[, model_month := factor(model_month, levels = c("Mar", "Apr", "May", "Jun", "Jul", "Aug"))]
-
 
 # weekly
 wkly.lme.errors <- errors[, .(
@@ -153,156 +134,223 @@ wkly.lme.errors.l[variable == "me", variable := "Median Error"]
 wkly.lme.errors.l[variable == "mpe", variable := "Median Percent Error"]
 wkly.lme.errors.l[variable == "mae", variable := "Median Absolute Error"]
 
-wkly.lme.errors.l[, model_month := factor(model_month, levels = c("Mar", "Apr", "May", "Jun","Jul"))]
+#--COLLAPSE ERRORS------------------------------------------
 
-#-------Figure 2 and Extended Data Figures 1-3 -----------------------------------
+me <- errors[, .(location_name, super_region_name, model_short, model_month, errwk, wkflag, truth, truth_wk, error, wkly_error)]
+id <- c("location_name", "super_region_name", "model_short", "model_month", "errwk", "wkflag", "truth", "truth_wk")
+me <- me %>% melt(., id.vars=id, value.name="error", variable.name="err_type")
+me[, abs_error := abs(error)]
+me[err_type == "wkly_error", per_error := (error / truth_wk) * 100]
+me[err_type != "wkly_error", per_error := (error / truth) * 100]
+me[, abs_per_error := abs(per_error)]
 
-mer.wts <- errors[, c("location_name", "super_region_name", "model_short", "errwk", "error", "wkly_error", "truth", "truth_wk", "model_month")]
-mer.wts <- mer.wts[!duplicated(mer.wts[, c("location_name", "super_region_name", "model_short", "errwk", "truth", "truth_wk","model_month")])]
-mer.wts <- melt.data.table(mer.wts, id.vars = c("location_name", "super_region_name", "model_short", "errwk", "truth", "truth_wk", "model_month"), value.name = "error", variable.name = "err_type")
+## Pooled
+pool <- me %>% copy
+pool <- pool[, model_short:="Pooled"]
+me <- rbind(me, pool)
 
-mer.wts[, abs_error := abs(error)]
-mer.wts[err_type == "wkly_error", per_error := (error / truth_wk) * 100]
-mer.wts[err_type != "wkly_error", per_error := (error / truth) * 100]
+## Metrics by
+metrics.by <- function(df, by) {
+  df[is.finite(error), .(
+    me = median(error, na.rm = T),
+    mae = median(abs_error, na.rm = T),
+    mape = median(abs_per_error, na.rm = T),
+    mpe = median(per_error, na.rm = T),
+    loc_n = uniqueN(location_name)
+  ), by = by]
+}
 
+## Approach 1 : Most recent model errors by 4 week windows
 
-mer.wts[, abs_per_error := abs(per_error)]
-
-mer.wts.gp <- mer.wts[is.finite(error), .(
-  me = median(error, na.rm = T),
-  mae = median(abs_error, na.rm = T),
-  mape = median(abs_per_error, na.rm = T),
-  mpe = median(per_error, na.rm = T),
-  loc_n = uniqueN(location_name)
-), by = .(model_month, errwk, err_type)]
-
-mer.wts.gp[, model_short := "Pooled"]
-mer.wts.gp[, super_region_name := "Global"]
-
-mer.wts.g <- mer.wts[is.finite(error), .(
-  me = median(error, na.rm = T),
-  mae = median(abs_error, na.rm = T),
-  mape = median(abs_per_error, na.rm = T),
-  mpe = median(per_error, na.rm = T),
-  loc_n = uniqueN(location_name)
-), by = .(model_short, model_month, errwk, err_type)]
-
-mer.wts.g[, super_region_name := "Global"]
-
-mer.wts.p <- mer.wts[is.finite(error), .(
-  me = median(error, na.rm = T),
-  mae = median(abs_error, na.rm = T),
-  mape = median(abs_per_error, na.rm = T),
-  mpe = median(per_error, na.rm = T),
-  loc_n = uniqueN(location_name)
-), by = .(model_month, errwk, err_type,super_region_name)]
-
-mer.wts.p[, model_short := "Pooled"]
-
-mer.wts <- mer.wts[is.finite(error), .(
-  me = median(error, na.rm = T),
-  mae = median(abs_error, na.rm = T),
-  mape = median(abs_per_error, na.rm = T),
-  mpe = median(per_error, na.rm = T),
-  loc_n = uniqueN(location_name)
-), by = .(model_short, model_month, errwk, err_type,super_region_name)]
+## Global
+me.4w.g <- metrics.by(me, by=c("err_type", "model_short", "errwk", "wkflag")) %>%
+          mutate(super_region_name="Global")
+## Super Region
+me.4w.sr <- metrics.by(me, by=c("err_type", "model_short", "errwk", "wkflag", "super_region_name"))
+## Total: Subset to 4 week window (wkflag == 1)
+me.4w.t <- rbind(me.4w.g, me.4w.sr) 
+me.4w.t <- me.4w.t[wkflag==1]; me.4w.t$wkflag <- NULL
+me.4w.t[, approach := "recent"]
+me.4w.t[, model_month := "N/A"]
 
 
-mer.wts <- rbind(mer.wts, mer.wts.p,mer.wts.g,mer.wts.gp)
+## Approach 2 : Monthly model errors
 
-mer.wts.l <- melt.data.table(mer.wts, id.vars = c("model_short", "model_month", "errwk", "err_type", "loc_n","super_region_name"))
-mer.wts.l[variable == "mape", variable := "Median Absolute Percent Error"]
-mer.wts.l[variable == "me", variable := "Median Error"]
-mer.wts.l[variable == "mpe", variable := "Median Percent Error"]
-mer.wts.l[variable == "mae", variable := "Median Absolute Error"]
-mer.wts.l[err_type == "error", err_type := "Total Cumulative Error"]
-mer.wts.l[err_type == "wkly_error", err_type := "Weekly Error"]
+## Global
+me.m.g <-  metrics.by(me, by=c("model_month", "model_short", "err_type", "errwk")) %>%
+  mutate(super_region_name="Global")
+## Super Region
+me.m.sr <- metrics.by(me, by=c("model_month", "model_short", "err_type", "errwk", "super_region_name"))
+## Total
+me.m.t <- rbind(me.m.g, me.m.sr)
+me.m.t[, approach := "monthly"]
 
+## Combine
+me.t <- rbind(me.m.t, me.4w.t)
 
-# set graphing order
-mer.wts.l[, srn2 := super_region_name]
-mer.wts.l[srn2 == "Central Europe, Eastern Europe, and Central Asia", srn2 := "Eastern Europe, Central Asia"]
-mer.wts.l[srn2 == "Southeast Asia, East Asia, and Oceania", srn2 := "Southeast, East Asia, Oceania"]
-
-mer.wts.l[, model_month := factor(model_month, levels = c("Mar", "Apr", "May", "Jun","Jul"))]
-
-# create new value for fill color
-mer.wts.l[, value_trm := value]
-mer.wts.l[value > 100, value_trm := 100]
-mer.wts.l[value <- 100, value_trm := -100]
+## Clean labels
+id <- c("model_month", "model_short", "err_type", "errwk", "loc_n", "super_region_name", "approach")
+me.t <- melt(me.t, id.vars=id)
+## Subset to where loc_n > 5
+me.t <- me.t[loc_n > 5]
+## Trim value
+me.t[, value_trm := value]
+me.t[variable %in% c("mape", "mpe") & value > 100, value_trm := 100]
+me.t[variable %in% c("mape", "mpe") & value < -100, value_trm := -100]
+# Super Region
+me.t[, srn2 := super_region_name]
+me.t[srn2 == "Central Europe, Eastern Europe, and Central Asia", srn2 := "Eastern Europe, Central Asia"]
+me.t[srn2 == "Southeast Asia, East Asia, and Oceania", srn2 := "Southeast, East Asia, Oceania"]
+# Display 
+me.t[variable == "mape", disp := "Median Absolute Percent Error"]
+me.t[variable == "me", disp := "Median Error"]
+me.t[variable == "mpe", disp := "Median Percent Error"]
+me.t[variable == "mae", disp := "Median Absolute Error"]
 
 ## Save
-saveRDS(mer.wts.l, "data/processed/magnitude.rds")
+saveRDS(me.t, "data/processed/magnitude.rds")
 
+#--GRAPH----------------------------------------
 
-
-
-if (r.pv_plots == 1) {
-c.month <- "Jun"
-c.wks <- 12
+if (graph) {
   
-pdf(paste0("visuals/Figures_2_3_", Sys.Date(), ".pdf"), width = 6, height =9 )
 
-for (c.var in c("Median Absolute Percent Error", "Median Percent Error")) {
-  for (c.tp in unique(mer.wts.l$err_type)) {
-    gg1 <- ggplot(mer.wts.l[super_region_name!="Global" & loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%c(c.month)&errwk<=c.wks], aes(y = errwk, x = model_short, fill = value_trm, label=paste0(round(value),"%"))) +
+## Tile plots for errors BY
+plot.tile <- function(df, global=F, var, err, facet=F) {
+  
+    p <- ggplot(df[variable==var & err_type==err], aes(y = errwk, x = model_short, fill = value_trm, label = paste0(round(value, 0), "%"))) +
       geom_tile(alpha = 1) +
-      theme_bw() +
-      facet_wrap(~srn2,scales="free_y",ncol=2) +
       geom_text(size = 2.9) +
-      labs(y = "Forecasting Weeks", x = "Model") +
-      theme(
-        axis.title.x = element_text(size = 9, face = "bold"), strip.background = element_rect(fill = "white"),
-        axis.title.y = element_text(size = 9, face = "bold"), plot.title = element_text(size = 9, face = "bold"),
-        axis.text.x = element_text(size = 9, angle = 45, hjust = 1, face = "bold"),
-        axis.text.y = element_text(size = 9, face = "bold"), legend.position = "none"
-      ) +
-      scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 45, name = "", breaks = seq(0, 100, 10), labels = paste0(seq(0, 100, 10), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 100))+
-      scale_y_continuous(breaks=seq(1,c.wks)) 
-    
-    gg2 <- ggplot(mer.wts.l[super_region_name=="Global" & loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%c(c.month)&errwk<=c.wks], aes(y = errwk, x = model_short, fill = value_trm, label = paste0(sprintf(value,fmt='%#.1f'),"%"))) +
-      geom_tile(alpha = 1) +
-      theme_bw() +
-      facet_wrap(~srn2,scales="free_y",ncol=1) +
-      geom_text(size = 3.5) +
-      labs(y = "Forecasting Weeks", x = "", title = paste0(c.tp, "\n", c.var)) +
-        theme(
-        axis.title.x = element_blank(), strip.background = element_rect(fill = "white"),
-        axis.title.y = element_text(size = 9, face = "bold"), plot.title = element_text(size = 12, face = "bold"),
-        axis.text.x = element_text(size = 8, angle = 0,  face = "bold"),
-        axis.text.y = element_text(size = 9, face = "bold"), legend.position = "top"
-      ) +
-      scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 45, name = "", breaks = seq(0, 100, 10), labels = paste0(seq(0, 100, 10), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 100))+
-      scale_y_continuous(breaks=seq(1,c.wks)) 
-
-    if (c.var=="Median Percent Error")  gg1 <- gg1 +scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-100, 100, 50), labels = paste0(seq(-100, 100, 50), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-100, 100))
-    if (c.var=="Median Percent Error")  gg2 <- gg2 +scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-100, 100, 20), labels = paste0(seq(-100, 100, 20), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-100, 100))
-    
-    
-    gg <- plot_grid(gg2,gg1,rel_heights = c(1.5,2),align='v',axis='lr',ncol=1)
-    print(gg)
-    
- 
-    
+      facet_wrap(~srn2,scales="free_y",ncol=2) 
   
+  if (global) {
+    x.title <- element_blank()
+    x.text <-  element_text(size = 8, angle = 0,  face = "bold")
+  } else {
+    x.title <- element_text(size = 9, face = "bold")
+    x.text <- element_text(size = 9, angle = 45, hjust = 1, face = "bold")
+  }
+  
+  p <- p + 
+    labs(y = "Forecasting Weeks", x = "Model") +
+    scale_y_continuous(breaks=seq(1,12)) +
+    theme_bw() + 
+    theme(
+      strip.background = element_rect(fill = "white"),
+      axis.title.x = x.title, 
+      axis.title.y = element_text(size = 9, face = "bold"), plot.title = element_text(size = 12, face = "bold"),
+      axis.text.x = x.text,
+      axis.text.y = element_text(size = 9, face = "bold"), legend.position = "top"
+    )
+  
+  if (var=="mpe") p <- p + scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-100, 100, 50), labels = paste0(seq(-100, 100, 50), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-100, 100))
+  if (var=="mape") p <- p + scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 45, name = "", breaks = seq(0, 100, 10), labels = paste0(seq(0, 100, 10), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 100))
+  
+  return(p)
+}
+
+## Tile plots: Most Recent: MAPE/MPE by Error Type
+pdf(paste0("visuals/tile_recent_", Sys.Date(), ".pdf"), width = 6, height = 10 )
+for (err in c("error", "wkly_error")) {
+for (var in c("mape", "mpe")) {
+  disp.var <- ifelse(var=="mape", "Median Absolute Percent Error", "Median Absolute Error")
+  disp.err <- ifelse(err=="error", "Total Cumulative Error", "Weekly Error")
+  p.g <- me.t[super_region_name=="Global" & approach=="recent"] %>% 
+    plot.tile(., var=var, err=err, global=T) + ggtitle(paste0(disp.err, " (4 Week Window) \n", disp.var))
+  p.sr <- me.t[super_region_name!="Global" & approach=="recent"] %>% 
+    plot.tile(., var=var, err=err) + theme(legend.position="none")
+  gg <- plot_grid(p.g,p.sr,rel_heights = c(1.5,2),align='v',axis='lr',ncol=1)
+  print(gg)
+}
+}
+dev.off()
+
+
+## Tile plots: Monthly: MAPE/MPE by Error Type
+month <- "Jul, 2020"
+pdf(paste0("visuals/tile_monthly_", month, "_", Sys.Date(), ".pdf"), width = 6, height = 10 )
+for (err in c("error", "wkly_error")) {
+  for (var in c("mape", "mpe")) {
+    disp.var <- ifelse(var=="mape", "Median Absolute Percent Error", "Median Absolute Error")
+    disp.err <- ifelse(err=="error", "Total Cumulative Error", "Weekly Error")
+    p.g <- me.t[super_region_name=="Global" & approach=="monthly" & model_month==month] %>% 
+      plot.tile(., var=var, err=err, global=T) + ggtitle(paste0(disp.err, " (Models from ", month, ") \n", disp.var))
+    p.sr <- me.t[super_region_name!="Global" & approach=="monthly" & model_month==month] %>% 
+      plot.tile(., var=var, err=err) + theme(legend.position="none")
+    gg <- plot_grid(p.g,p.sr,rel_heights = c(1.5,2),align='v',axis='lr',ncol=1)
+    print(gg)
   }
 }
 dev.off()
 
 
+#--Tile plot helper--------------------------------------------
+
+## Frame for model date ranges using Most Recent approach
+df.recent <- data[!is.na(errwk)&wkflag==1 & errwk>0, .(errwk, model_date)] %>% unique
+df.recent[, min := min(model_date), by=errwk]
+df.recent[, max := max(model_date), by=errwk]
+df.recent <- df.recent[, .(errwk, min, max)] %>% unique
+df.recent[, mid := max]
+df.recent[, mid.end := mid + errwk*7]
+df.recent[, errwk := paste0(errwk, " weeks") %>% factor(., levels=paste0(1:12, " weeks"), ordered=T)]
+
+## Frame for model date ranges using Monthly approach
+df.monthly <- data.table(errwk=1:12 %>% rev)
+df.monthly[, min := ymd("2020-07-01")]
+df.monthly[, max:= ymd("2020-07-31")]
+df.monthly[, mid := max]
+df.monthly[, mid.end := mid + errwk*7]
+df.monthly[, errwk := paste0(errwk, " weeks") %>% factor(., levels=paste0(1:12, " weeks"), ordered=T)]
+
+p.recent <- ggplot(df.recent) + 
+  geom_segment(aes(x=min, xend=max, y=errwk, yend=errwk), size=4) +
+  geom_segment(aes(x=mid, xend=mid.end, y=errwk, yend=errwk)) +
+  geom_point(aes(x=mid.end, y=errwk)) + 
+  xlim(c(ymd("2020-06-15"), ymd("2020-11-01"))) + 
+  scale_y_discrete(position="right") + 
+  bbc_style() + 
+  ylab("N weeks forecasting") + 
+  ggtitle('"Most Current" Analytical Approach') +
+  theme(axis.text.y=element_text(size=10), plot.title = element_text(size = 17))
+
+p.monthly <- ggplot(df.monthly) +
+  geom_segment(aes(x=min, xend=max, y=errwk, yend=errwk), size=4) +
+  geom_segment(aes(x=mid, xend=mid.end, y=errwk, yend=errwk)) +
+  geom_point(aes(x=mid.end, y=errwk)) + 
+  xlim(c(ymd("2020-06-15"), ymd("2020-07-31"))) + 
+  scale_y_discrete(position="right") + 
+  bbc_style() + 
+  ylab("N weeks forecasting") + 
+  ggtitle('"Month Stratified" Analytical Approach')+
+  theme(axis.text.y=element_text(size=10), plot.title = element_text(size = 17))
 
 
-pdf(paste0("visuals/Supplemental_Figures_1_2_3", Sys.Date(), ".pdf"), width = 16, height = 8)
+pdf(paste0("visuals/tile_helper_", Sys.Date(), ".pdf"), width = 8, height = 6)
+plot_grid(p.recent, p.monthly, ncol=1)
+dev.off()
 
+
+#-------SUPPLEMENTAL FIGURES 1-2-3-----------------------------------
+
+pdf(paste0("visuals/tile_allmonth_", Sys.Date(), ".pdf"), width = 16, height = 9)
+
+c.wks <- 12
 c.var <- "Median Absolute Percent Error"
-for (c.var in c("Median Absolute Percent Error", "Median Percent Error")) {
-  for (c.tp in unique(mer.wts.l$err_type)) {
-    gg1 <- ggplot(mer.wts.l[srn2!="Global"&loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%c("Mar","Apr","May","Jun", "Jul")], aes(y = errwk, x = model_short, fill = value_trm, label = round(value))) +
+months <- c("Mar, 2020","Apr, 2020","May, 2020","Jun, 2020", "Jul, 2020") 
+for (c.var in c("mape", "mpe", "mae")) {
+  for (c.tp in c("error", "wkly_error")) {
+    
+    disp.var <- ifelse(var=="mape", "Median Absolute Percent Error", ifelse(var=="mpe", "Median Percent Error", "Median Absolute Error"))
+    disp.err <- ifelse(err=="error", "Total Cumulative Error", "Weekly Error")
+    
+    data1 <- me.t[approach=="monthly" & srn2!="Global"&loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%months&errwk<=c.wks]
+    gg1 <- ggplot(data1, aes(y = errwk, x = model_short, fill = value_trm, label = round(value))) +
       geom_tile(alpha = 1) +
       theme_bw() +
       facet_grid(row=vars(model_month),cols=vars(srn2),scales="free_y",switch="y",as.table=F) +
       geom_text(size = 2.6) +
-      labs(y = "Forecasting Weeks", x = "Model", title = paste0(c.tp, " - ", c.var)) +
+      labs(y = "Forecasting Weeks", x = "Model", title = paste0(disp.err, " - ", disp.var)) +
       theme(
         axis.title.x = element_text(size = 9, face = "bold"), strip.background = element_rect(fill = "white"),
         axis.title.y = element_text(size = 9, face = "bold"), plot.title = element_text(size = 12, face = "bold"),
@@ -310,9 +358,10 @@ for (c.var in c("Median Absolute Percent Error", "Median Percent Error")) {
         axis.text.y = element_text(size = 9, face = "bold"), legend.position = "top"
       ) +
       scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 45, name = "", breaks = seq(0, 100, 10), labels = paste0(seq(0, 100, 10), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 100))+
-      scale_y_continuous(breaks=seq(1,20))
+      scale_y_continuous(breaks=seq(1,12))
     
-    gg2 <- ggplot(mer.wts.l[srn2=="Global"&loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%c("Mar","Apr","May","Jun", "Jul")], aes(y = errwk, x = model_short, fill = value_trm, label = round(value))) +
+    data2 <- me.t[approach=="monthly"&srn2=="Global" &loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%months&errwk<=c.wks]
+    gg2 <- ggplot(data2, aes(y = errwk, x = model_short, fill = value_trm, label = round(value))) +
       geom_tile(alpha = 1) +
       theme_bw() +
       facet_grid(row=vars(model_month),cols=vars(srn2),scales="free_y",as.table=F) +
@@ -325,98 +374,28 @@ for (c.var in c("Median Absolute Percent Error", "Median Percent Error")) {
         axis.text.y = element_blank(), legend.position = "none"
       ) +
       scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 45, name = "", breaks = seq(0, 100, 10), labels = paste0(seq(0, 100, 10), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 100))+
-      scale_y_continuous(breaks=seq(1,20))
+      scale_y_continuous(breaks=seq(1,12))
     
     
-    if (c.var=="Median Percent Error")  gg1 <- gg1 +scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-100, 100, 20), labels = paste0(seq(-100, 100, 20), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-100, 100))
-    if (c.var=="Median Percent Error")  gg2 <- gg2 +scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-100, 100, 20), labels = paste0(seq(-100, 100, 20), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-100, 100))
+    if (c.var=="mpe") {
+      gg1 <- gg1 +scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-100, 100, 20), labels = paste0(seq(-100, 100, 20), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-100, 100))
+      gg2 <- gg2 +scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-100, 100, 20), labels = paste0(seq(-100, 100, 20), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-100, 100))
+    }  
+    
+    if (c.var=="mae" & c.tp =="error") {
+      gg1 <- gg1 +scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 500, name = "", breaks = seq(0, 1000, 200), labels = seq(0, 1000, 200), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 1000))
+      gg2 <- gg2 +scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 500, name = "", breaks = seq(0, 1000, 200), labels = seq(0, 1000, 200), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 1000))
+    }
+    if (c.var=="mae" & c.tp =="wkly_error") {
+      gg1 <- gg1 +scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 150, name = "", breaks = seq(0, 300, 50), labels = seq(0, 300, 50), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 300))
+      gg2 <- gg2 +scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 150, name = "", breaks = seq(0, 300, 50), labels = seq(0, 300, 50), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 300))
+    }
     
     gg <- plot_grid(gg1,gg2,rel_widths = c(1,.2),align='h',axis='tb')
     print(gg)
   }
 }
 dev.off()
-
-}
-
-
-##########################-----------------------------#######################################
-
-wer.wts <- errors[, c("location_name", "super_region_name", "model_short", "errwk", "error", "wkly_error", "truth", "truth_wk", "model_week")]
-wer.wts <- wer.wts[!duplicated(wer.wts[, c("location_name", "super_region_name", "model_short", "errwk", "truth", "truth_wk","model_week")])]
-wer.wts <- melt.data.table(wer.wts, id.vars = c("location_name", "super_region_name", "model_short", "errwk", "truth", "truth_wk", "model_week"), value.name = "error", variable.name = "err_type")
-
-wer.wts[, abs_error := abs(error)]
-wer.wts[err_type == "wkly_error", per_error := (error / truth_wk) * 100]
-wer.wts[err_type != "wkly_error", per_error := (error / truth) * 100]
-
-
-wer.wts[, abs_per_error := abs(per_error)]
-
-
-
-wer.wts.gp <- wer.wts[is.finite(error), .(
-  me = median(error, na.rm = T),
-  mae = median(abs_error, na.rm = T),
-  mape = median(abs_per_error, na.rm = T),
-  mpe = median(per_error, na.rm = T),
-  loc_n = uniqueN(location_name)
-), by = .(model_week, errwk, err_type)]
-
-wer.wts.gp[, model_short := "Pooled"]
-wer.wts.gp[, super_region_name := "Global"]
-
-wer.wts.g <- wer.wts[is.finite(error), .(
-  me = median(error, na.rm = T),
-  mae = median(abs_error, na.rm = T),
-  mape = median(abs_per_error, na.rm = T),
-  mpe = median(per_error, na.rm = T),
-  loc_n = uniqueN(location_name)
-), by = .(model_short, model_week, errwk, err_type)]
-
-wer.wts.g[, super_region_name := "Global"]
-
-wer.wts.p <- wer.wts[is.finite(error), .(
-  me = median(error, na.rm = T),
-  mae = median(abs_error, na.rm = T),
-  mape = median(abs_per_error, na.rm = T),
-  mpe = median(per_error, na.rm = T),
-  loc_n = uniqueN(location_name)
-), by = .(model_week, errwk, err_type,super_region_name)]
-
-wer.wts.p[, model_short := "Pooled"]
-
-wer.wts <- wer.wts[is.finite(error), .(
-  me = median(error, na.rm = T),
-  mae = median(abs_error, na.rm = T),
-  mape = median(abs_per_error, na.rm = T),
-  mpe = median(per_error, na.rm = T),
-  loc_n = uniqueN(location_name)
-), by = .(model_short, model_week, errwk, err_type,super_region_name)]
-
-
-wer.wts <- rbind(wer.wts, wer.wts.p,wer.wts.g,wer.wts.gp)
-
-wer.wts.l <- melt.data.table(wer.wts, id.vars = c("model_short", "model_week", "errwk", "err_type", "loc_n","super_region_name"))
-wer.wts.l[variable == "mape", variable := "Median Absolute Percent Error"]
-wer.wts.l[variable == "me", variable := "Median Error"]
-wer.wts.l[variable == "mpe", variable := "Median Percent Error"]
-wer.wts.l[variable == "mae", variable := "Median Absolute Error"]
-wer.wts.l[err_type == "error", err_type := "Total Cumulative Error"]
-wer.wts.l[err_type == "wkly_error", err_type := "Weekly Error"]
-
-
-# set graphing order
-wer.wts.l[, srn2 := super_region_name]
-wer.wts.l[srn2 == "Central Europe, Eastern Europe, and Central Asia", srn2 := "Eastern Europe, Central Asia"]
-wer.wts.l[srn2 == "Southeast Asia, East Asia, and Oceania", srn2 := "Southeast, East Asia, Oceania"]
-
-
-# create new value for fill color
-wer.wts.l[, value_trm := value]
-wer.wts.l[value > 100, value_trm := 100]
-wer.wts.l[value <- 100, value_trm := -100]
-
 
 #-------Figure 1 and Country-Specific Magnitude Plots -----------------------------------
 
@@ -428,35 +407,6 @@ ord <- ord[, .(deaths_cum = mean(truth, na.rm = T)), by = .(location_name)]
 ord <- ord[order(-deaths_cum)]
 locs.list.ord <- merge(locs.list, ord, all = T, by = "location_name")
 locs.list.ord <- locs.list.ord[order(-deaths_cum)]
-template[, location_name := factor(location_name, levels = rev(locs.list.ord$location_name))]
-
-template[present == 1, shw := errwk]
-template[present == 0, shw := 0]
-
-## graph overlap
-gg <- ggplot(template[location_name %in% locs.list.ord$location_name], aes(x = model_short, y = location_name, fill = factor(present))) +
-  geom_tile() +
-  theme_bw() +
-  scale_fill_discrete(name = "Present") +
-  theme(
-    plot.title = element_text(size = 12, face = "bold"),
-    axis.title.x = element_text(size = 10),
-    axis.text.y = element_text(size = 4), strip.background = element_rect(fill = "white"),
-    axis.text.x = element_text(size = 10, angle = 0),
-    strip.text.x = element_text(size = 10, face = "bold"), legend.position = "top"
-  ) +
-  labs(y = "Location", x = "Model", title = "Overlap Between Models by Number of Forecasting Weeks") +
-  facet_wrap(~errwk, nrow = 1)
-gg
-
-
-
-# drop points in past that plot strangely due to shifting data formatting
-errors <- errors[!(model_long == "IHME - MS SEIR" & model_date == "2020-05-29" & location_name == "United States")]
-
-data <- data[!(model_long == "IHME - MS SEIR" & location_name == "United States" & truth > 100 & deaths_cum < 100)]
-
-
 
 lme.errors.l[variable %in% c("Median Error"), variable := "Med Err"]
 lme.errors.l[variable %in% c("Median Absolute Error"), variable := "Med Abs Err"]
@@ -473,7 +423,7 @@ c.vals <- c(
 )
 
 if (r.forecast_plots == 1) {
-  raster_pdf(paste0("visuals/Supplemental_Figures_Magnitude_", Sys.Date(), ".pdf"), width = 12, height = 8, res=150)
+  raster_pdf(paste0("visuals/country_forecast_", Sys.Date(), ".pdf"), width = 12, height = 8, res=150)
   for (c.loc in ord[deaths_cum>10, location_name]) {
     print(c.loc)
    
@@ -591,7 +541,7 @@ if (r.forecast_plots == 1) {
     c.min <- min(lme.errors.l[location_name == c.loc & variable %in% c("Med Err", "Med Abs Err") & !(model_long %in% c("Imperial", "SIKJalpha")), value / 1000], na.rm = T)
 
     gg4 <- ggplot(
-      lme.errors.l[location_name == c.loc & variable %in% c("Med Err", "Med Abs Err")&model_month%in%c("Mar","Apr","May","Jun", "Jul") & errwk <= 6],
+      lme.errors.l[location_name == c.loc & variable %in% c("Med Err", "Med Abs Err")&model_month%in%c("Mar, 2020","Apr, 2020","May, 2020","Jun, 2020", "Jul, 2020") & errwk <= 6],
       aes(x = errwk, y = value / 1000, color = model, fill = model_long)
     ) +
       geom_hline(aes(yintercept = add_line), alpha = .7) +
@@ -624,12 +574,14 @@ if (r.forecast_plots == 1) {
   dev.off()
 }
 
-
+}
 
 #-------------number plug------------------------------------------------------------
 
-#Collectively models covered 171 countries, as well as the 50 states of the United States, and Washington, D.C.,
-#and accounted for >99% of all reported COVID-19 deaths on June 30th, 2020.
+if (number.plug) {
+  
+# Collectively models covered 171 countries, as well as the 50 states of the United States, and Washington, D.C.,
+# and accounted for >99% of all reported COVID-19 deaths on June 30th, 2020.
 length(unique(data[nchar(ihme_loc_id)==3 | grepl(x=ihme_loc_id,pattern="USA_"),location_name]))
 length(unique(data[nchar(ihme_loc_id)==3 ,location_name]))
 
@@ -637,15 +589,30 @@ length(unique(data[nchar(ihme_loc_id)==3 ,location_name]))
 rev <- fread("data/review/review.csv")
 nrow(rev[forecast==1])
 
-c.var <- "Median Absolute Percent Error"
-c.tp <- "Total Cumulative Error"
-mer.wts.l[, value := round(value, 1)]
+c.var <- "mape"
+c.tp <- "error"
+me.t[, value := round(value, 1)]
 
+# Number Plug Results for Monthly Approach
+me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "Global" & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(1, 12), value]
+me.t[approach=="monthly" & model_month=="Jul, 2020"  & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(6), c("super_region_name","value")]
+me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "Global"  & variable == c.var & err_type == c.tp & errwk %in% c(6), c("model_short","value")]
+me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "Global"  & variable == c.var & err_type == c.tp & errwk %in% c(12), c("model_short","value")]
+me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "High-income"  & variable == c.var & err_type == c.tp & errwk %in% c(12), c("model_short","value")]
 
-#example number plug
-mer.wts.l[model_month=="May" & super_region_name == "Global" & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(1, 6), value]
+c.var <- "mpe"
+c.tp <- "error"
+me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "Global" & variable == c.var & err_type == c.tp & errwk %in% c(6), c("model_short","value")]
 
+# Number Plug Results for Recent Approach
 
+# For all models, the most recent 1-week errors, reflecting forecasts created in October, ranged from 1% to 2%.
+me.t[approach=="recent" & errwk==1&super_region_name=="Global"&err_type=="error"&variable=="mape"]
+#12-week median absolute percent errors (MAPE), reflecting models produced in July and August,
+#ranged from 22.4% for the SIK-J Alpha model, to 79.9% for the Imperial model. 
+me.t[approach=="recent" & errwk==12&super_region_name=="Global"&err_type=="error"&variable=="mape"]
+#At the global level pooling across models, the most recent 6-week MAPE value was 7.2%.  
+me.t[approach=="recent" & errwk==6&super_region_name=="Global"&model_short=="Pooled"&err_type=="error"&variable=="mape"]
 
 #---------------------------------------------------------------------------------------
 #Numbers in Table 1
@@ -665,7 +632,7 @@ length(unique(data[model=="sikjalpha" & nchar(ihme_loc_id)==3,location_name]))
 (max(data[model=="yyg"&current==1,date]))
 (max(data[model=="ihme_elast"&current==1,date]))
 (max(data[model=="sikjalpha"&current==1,date]))
-
+}
 
 
 
