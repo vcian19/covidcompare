@@ -1,8 +1,8 @@
 # covidcompare
 
 #### Authors:   
-- Joseph Friedman (Email: joseph.robert.friedman@gmail.com, Twitter: [@JosephRFriedman](https://twitter.com/JosephRFriedman/))
-- Patty Liu (Email: pyliu47@gmail.com, Twitter: [@pyliu47](https://twitter.com/pyliu47/))
+- Joseph Friedman (Email: joseph.robert.friedman at gmail dot com, Twitter: [@JosephRFriedman](https://twitter.com/JosephRFriedman/))
+- Patty Liu (Email: pyliu47 at gmail dot com, Twitter: [@pyliu47](https://twitter.com/pyliu47/))
   
 #### Manuscript:  
 Predictive performance of international COVID-19 mortality forecasting models
