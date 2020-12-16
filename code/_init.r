@@ -2,7 +2,7 @@
 if (!require("pacman")) install.packages("pacman")
 pacman::p_load(data.table, tidyverse, git2r, 
                rvest, stringr, httr, rio, ggplot2, 
-               grid, gridExtra, zoo, RCurl, lubridate, cowplot, cronR, hms)
+               grid, gridExtra, zoo, RCurl, lubridate, cowplot, cronR, hms, git2r)
 
 ## Models and colnames
 db <- fread("data/ref/links.csv")

@@ -245,10 +245,17 @@ clean.imperial <- function(df, .date) {
     df <- df[type %in% c("cumulative", "daily") & scenario == "Maintain Status Quo"]
     
   } else {
-    ## Create cumulative deaths
+    ## Select Status Quo Deaths
     df <- df[compartment == "deaths" & scenario == "Maintain Status Quo"]
-    cols <- c("y_025", "y_mean", "y_975")
+    ## Save daily as a copy
+    df.d <- copy(df)
+    df.d[, type := "daily"]
+    ## Create Cumulative
+    cols <- c("y_025", "y_median", "y_975")
     df <- df[, (cols) := lapply(.SD, cumsum), .SDcols=cols, by="country"]
+    df[, type := "cumulative"]
+    ## Bind the daily back on
+    df <- rbind(df, df.d)
   }
   return(df)
 }
