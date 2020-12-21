@@ -3,5 +3,5 @@ ihme,"location_name, date, totdea_mean, totdea_lower, totdea_upper, deaths_mean,
 yyg,"country, date, predicted_total_deaths_mean, predicted_total_deaths_lower, predicted_total_deaths_upper","location_name, date, deaths, lower, upper"
 imperial,"country, date, y_median, y_025, y_975, type","location_name, date, deaths, lower, upper, type"
 lanl,"countries, dates, q.50, q.025, q.975, type","location_name, date, deaths, lower, upper, type"
-delphi,"Country, Day, Total Detected Deaths","location_name, date, deaths"
+delphi,"Country, Day, Total Detected Deaths, Total Detected Deaths LB, Total Detected Deaths UB","location_name, date, deaths, lower, upper"
 sikjalpha,,
