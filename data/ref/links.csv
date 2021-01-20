@@ -5,3 +5,4 @@ imperial,"country, date, y_median, y_025, y_975, type","location_name, date, dea
 lanl,"countries, dates, q.50, q.025, q.975, type","location_name, date, deaths, lower, upper, type"
 delphi,"Country, Day, Total Detected Deaths, Total Detected Deaths LB, Total Detected Deaths UB","location_name, date, deaths, lower, upper"
 sikjalpha,,
+ucla, "Region, Date, pre_fata, lower_pre_fata, upper_pre_fata, pre_fata_daily, lower_pre_fata_daily, upper_pre_fata_daily", "location_name, date, deaths, lower, upper, daily, daily_lower, daily_upper"
