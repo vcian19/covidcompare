@@ -10,9 +10,9 @@ source("code/_init.r")
 source("code/_collate.r")
 
 # set which graphs to produce
-graph <- 0 ## Any graph
-r.forecast_plots <- 0 ## Country specific forecast plots (Figure 1)
-number.plug <- 0
+graph <- 1 ## Any graph
+r.forecast_plots <- 1 ## Country specific forecast plots (Figure 1)
+number.plug <- 1
 
 # Plot Colors
 c.vals <- c(

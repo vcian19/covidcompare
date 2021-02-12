@@ -64,9 +64,6 @@ pt <- mclapply(1:nrow(t), function(x) {
   truth[, model_date := .date]
   return(truth)
 }, mc.cores=4) %>% rbindlist
-export(pt, "data/processed/pt.rds")
-
-pt <- readRDS("data/processed/pt.rds")
 
 pt %>% setnames("truth", "deaths_cum")
 pt[, deaths := deaths_cum - data.table::shift(deaths_cum), by=.(location_name, model_date, model)]
