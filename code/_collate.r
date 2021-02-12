@@ -2,14 +2,18 @@
 source("code/_init.r")
 
 #--DATA CLEANING-----------------------------------------------------------
-collate.data <- function() {
+collate.data <- function(cores=1, model_date_end=NA) {
 ## Collate everything together
-df <- lapply(db$model, function(model) {
-  path <- paste0("data/raw/", model)
-  files <- list.files(path, full.name = T)
-  df <- lapply(files, function(x) fread(x, colClasses=c("model_date"="character", "date"="character"))) %>% rbindlist(., fill = T)
-  df[, model_date := as.character(model_date)]
-}) %>% rbindlist(., fill = T)
+  df <- mclapply(db$model, function(model) {
+    path <- paste0("data/raw/", model)
+    files <- data.table(path=list.files(path, full.name = T))
+    if (!is.na(model_date_end)) {
+      files[, model_date := as.Date(gsub(paste0("data/raw/", model, "/|.csv"), "", path))]
+      files <- files[model_date <= model_date_end]
+    }
+    df <- lapply(files$path, function(x) fread(x, colClasses=c("model_date"="character", "date"="character"))) %>% rbindlist(., fill = T)
+    df[, model_date := as.character(model_date)]
+  }, mc.cores=cores) %>% rbindlist(., fill = T)
 
 # Create daily space
 df[, `:=` (deaths_cum = deaths, lower_cum = lower, upper_cum=upper)]
@@ -38,20 +42,15 @@ truth[is.na(truth), truth := jhu]
 ## Merge truth
 df <- merge(df, truth[, .(ihme_loc_id, date, truth, jhu, nyt)], by=c("date", "ihme_loc_id"), all.x=T)
 
-## Categorize IHME Models
-df[model=="ihme" & model_date <= as.Date("2020-04-29"), model := "ihme_cf"]
-df[model=="ihme" & model_date >= as.Date("2020-05-04") & model_date <= as.Date("2020-05-26") , model := "ihme_hseir"]
-df[model=="ihme" & model_date >= as.Date("2020-05-29"), model := "ihme_elast"]
-
 ## Set graphing order
 df[, model_short := factor(model,
-                           levels = c("delphi", "lanl", "yyg", "imperial", "sikjalpha", "ihme_cf", "ihme_hseir", "ihme_elast"),
-                           labels = c("Delphi", "LANL", "YYG", "Imperial", "SIKJalpha", "IHME-CF", "IHME-CF-SEIR", "IHME-MS-SEIR"), ordered = T
+                           levels = c("delphi", "lanl", "yyg", "imperial", "sikjalpha", "ihme", "ucla"),
+                           labels = c("Delphi", "LANL", "YYG", "Imperial", "SIKJalpha", "IHME", "UCLA-ML"), ordered = T
 )]
 
 df[, model_long := factor(model,
-                          levels =c("delphi", "lanl", "yyg", "imperial", "sikjalpha", "ihme_cf", "ihme_hseir", "ihme_elast"),
-                          labels = c("Delphi", "Los Alamos Nat Lab", "Youyang Gu", "Imperial", "SIKJalpha", "IHME - Curve Fit", "IHME - CF SEIR", "IHME - MS SEIR"), ordered = T
+                          levels =c("delphi", "lanl", "yyg", "imperial", "sikjalpha", "ihme", "ucla"),
+                          labels = c("Delphi", "Los Alamos Nat Lab", "Youyang Gu", "Imperial", "SIKJalpha", "IHME", "UCLA-ML"), ordered = T
 )]
 
 df <- df[order(model, model_date, location_name, date)]
@@ -60,6 +59,9 @@ df <- df[order(model, model_date, location_name, date)]
 locs <- fread("data/ref/locs_ihme.csv")
 locs <- locs[level==3 | grepl("USA_", ihme_loc_id), c("location_name", "ihme_loc_id","super_region_name")]
 df <- merge(df, locs, by = c("location_name","ihme_loc_id"), all.x = T)
+
+## Drop data error in published IHME 05-29 model
+df <- df[!(model_long == "IHME" & model_date == "2020-05-29" & location_name == "United States")]
 
 ## 
 df[, .(model_short, model_date)] %>% unique

@@ -24,15 +24,14 @@ links.ihme <- function() {
   ## Latest update
   tp.date <- readLines("http://www.healthdata.org/covid/data-downloads") %>%
     grep("last updated", ., value = T) %>%
-    strsplit(., ",") %>%
-    nth(1) %>%
-    nth(2) %>%
-    trimws() %>%
-    paste0(., ", 2020") %>%
+    strsplit(., ",")
+  md <- tp.date[[1]][2] %>% trimws()
+  y <- tp.date[[1]][3] %>% strsplit(., "\\.") %>% nth(1) %>% nth(1) %>% trimws()
+  date <- paste0(md, ", ", y) %>%
     parse_date_time(., orders = "mdy") %>%
     as.Date() %>%
     format("%Y-%m-%d")
-  tp <- data.table(link = "https://ihmecovid19storage.blob.core.windows.net/latest/ihme-covid19.zip", date = tp.date)
+  tp <- data.table(link = "https://ihmecovid19storage.blob.core.windows.net/latest/ihme-covid19.zip", date = date)
   links <- rbind(links, tp)
   links <- unique(links)
   return(links)
@@ -53,6 +52,29 @@ links.delphi <- function() {
   links <- links[n==max]
   links[, date := paste0(str_sub(date, 1, 4), "-", str_sub(date, 5, 6), "-", str_sub(date, 7, 9))]
   links[, link := paste0(github, link) %>% str_replace("tree", "raw")]
+  return(links)
+}
+
+links.ucla <- function() {
+  github <- "https://github.com/uclaml/ucla-covid19-forecasts/tree/master/"
+  req <- GET("https://api.github.com/repos/uclaml/ucla-covid19-forecasts/git/trees/master?recursive=1")
+  stop_for_status(req)
+  filelist <- unlist(lapply(content(req)$tree, "[", "path"), use.names = F) %>%
+    grep("projection_result", ., value = T) %>%
+    grep("pred_world|pred_state", ., value=T)
+  links <- data.table(link = filelist)
+  links <- links[, date := str_match(link, "[0-9]{2}-[0-9]{2}")]
+  links[, link := paste0(github, link) %>% str_replace("tree", "raw")]
+  ## Format Date
+  links[, month := str_match(date, "[0-9]{2}") %>% as.numeric]
+  links[, date := ifelse(month<4, paste0(date, "-2021"), paste0(date, "-2020"))]
+  links[, date := as.Date(date, format="%m-%d-%Y")]
+  ## Remove models before global (2020-07-12)
+  links <- links[date >= "2020-07-12"]
+  ## Keep where global has been updated
+  world.dates <- links[grepl("world", link)]$date %>% unique
+  links <- links[date %in% world.dates]
+  links[, date := as.character(date)]
   return(links)
 }
 
@@ -156,7 +178,7 @@ links.sikjalpha <- function() {
 ## Download, based on file structure for a given model shop
 
 download <- function(link, model) {
-  if (model %in% c("yyg", "lanl", "delphi", "sikjalpha")) {
+  if (model %in% c("yyg", "lanl", "delphi", "sikjalpha", "ucla")) {
     df <- lapply(link, function(x) {
       temp <- tempfile()
       download.file(x, temp)
@@ -267,6 +289,10 @@ clean.delphi <- function(df, .date) {
   return(df)
 }
 
+clean.ucla <- function(df, .date) {
+  return(df)
+}
+
 clean.lanl <- function(df, .date) {
   if ("countries" %in% names(df)) df[countries == "Georgia", countries := "Georgia (Country)"]
   if ("big_group" %in% names(df)) df[!is.na(big_group) & name=="Georgia", name := "Georgia (Country)"]
@@ -287,7 +313,7 @@ clean.sikjalpha <- function(df, .date) {
 }
 
 clean.cols <- function(df, .model) {
-  if (.model %in% c("yyg", "imperial", "delphi", "lanl", "ihme")) {
+  if (.model %in% c("yyg", "imperial", "delphi", "lanl", "ihme", "ucla")) {
   ## Subset columns
   cols <- db[model == .model]$cols %>%
     strsplit(",") %>%
@@ -316,6 +342,7 @@ clean.location_name <- function(df) {
   ## Attempt to map locations onto IHME standard set
   locs <- loc.ihme[level==3 | grepl("USA_", ihme_loc_id), c("location_name", "ihme_loc_id")]
   df <- merge(df, locs, by = "location_name", all.x = T)
+  df <- df[location_name!=""]
   
   ## Save non-mapped locations
   new_locs <- data.table(orig_name = df[is.na(ihme_loc_id)]$location_name %>% unique())
@@ -358,10 +385,13 @@ update.files <- function(links, .model) {
       df <- do.call(paste0("clean.", .model), list(df, .date))
       ## Column name cleaning
       df <- clean.cols(df, .model)
+      ## Make sure rows are unique
+      df <- df %>% unique
       ## Clean location_name
       df <- clean.location_name(df)
       ## Make wide if has daily
       if ("type" %in% names(df)) df <- make.wide(df)
+      df <- df %>% unique
       dupe.check(df)
       ## Create date, models cols
       df <- df[!is.na(deaths)]
@@ -369,7 +399,10 @@ update.files <- function(links, .model) {
       df <- df[, model := .model]
       ## Delete data prior to model_date
       df <- df[as.Date(date) >= as.Date(model_date)]
-      df %>% setcolorder(c("model", "model_date", "location_name", "ihme_loc_id", "date", "deaths", "lower", "upper"))
+      ## Temp fix for different data.table version
+      col.order <- c("model", "model_date", "location_name", "ihme_loc_id", "date", "deaths", "lower", "upper")
+      cols <- setdiff(names(df), col.order)
+      df %>% setcolorder(c(col.order, cols))
       ## Save
       export(df, paste0(output, .date, ".csv"))
     }
@@ -467,10 +500,11 @@ export(nyt, "data/processed/nyt.rds")
 ## Update forecast estimates
 update.files(links.lanl(), "lanl")
 update.files(links.imperial(), "imperial")
-tryCatch(update.files(links.ihme(), "ihme"), error=function(x) print("ihme error"))
+update.files(links.ihme(), "ihme")
 update.files(links.yyg(), "yyg")
 update.files(links.delphi(), "delphi")
 update.files(links.sikjalpha(), "sikjalpha")
+update.files(links.ucla(), "ucla")
 
 
 

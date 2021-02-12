@@ -17,13 +17,12 @@ number.plug <- 0
 # Plot Colors
 c.vals <- c(
   "Delphi" = "#e31a1c",
-  "IHME - CF SEIR" = "#6a3d9a",
-  "IHME - Curve Fit" = "#cab2d6",
-  "IHME - MS SEIR" = "#33a02c",
+  "IHME" = "#33a02c",
   "Los Alamos Nat Lab" = "#1f78b4",
   "Youyang Gu" = "#ff7f00",
   "Imperial" = "#fb9a99",
-  "SIKJalpha" = "#FF1493" 
+  "SIKJalpha" = "#FF1493", 
+  "UCLA-ML" = "#cab2d6"
 )
 
 #--DATA SETUP-------------------------------------------------
@@ -73,11 +72,18 @@ data <- merge(data, shifts, by = c("location_name", "model", "model_date"), all.
 data[!is.na(shift), deaths_cum_shifted := deaths_cum + shift]
 
 # Model month
+data <- data[order(model_date)]
 data[, model_month := format(model_date, format = "%b, %Y")]
+vals <- data$model_month %>% unique
+data[, model_month := factor(model_month, levels=vals, order=T)]
+
 data[, model_week := format(model_date, format = "%W")]
 
 # Calculate number of model iterations per month
 data[,iter_num:=uniqueN(model_date),by=.(model,model_month)]
+
+# Remove wonky IHME point
+data <- data[!(model_long == "IHME" & model_date == "2020-05-29" & location_name == "United States")]
 
 #--CALCULATE ERROR-----------------------------------
 
@@ -118,6 +124,7 @@ lme.errors.l[variable == "mape", variable := "Median Absolute Percent Error"]
 lme.errors.l[variable == "me", variable := "Median Error"]
 lme.errors.l[variable == "mpe", variable := "Median Percent Error"]
 lme.errors.l[variable == "mae", variable := "Median Absolute Error"]
+lme.errors.l[, model_month := factor(model_month, levels=vals, order=T)]
 
 # weekly
 wkly.lme.errors <- errors[, .(
@@ -139,10 +146,14 @@ wkly.lme.errors.l[variable == "mae", variable := "Median Absolute Error"]
 me <- errors[, .(location_name, super_region_name, model_short, model_month, errwk, wkflag, truth, truth_wk, error, wkly_error)]
 id <- c("location_name", "super_region_name", "model_short", "model_month", "errwk", "wkflag", "truth", "truth_wk")
 me <- me %>% melt(., id.vars=id, value.name="error", variable.name="err_type")
+
 me[, abs_error := abs(error)]
 me[err_type == "wkly_error", per_error := (error / truth_wk) * 100]
 me[err_type != "wkly_error", per_error := (error / truth) * 100]
 me[, abs_per_error := abs(per_error)]
+
+#remove infinite errors (dividing by zero)
+me <- me[(is.finite(per_error))&(is.finite(abs_per_error))]
 
 ## Pooled
 pool <- me %>% copy
@@ -194,9 +205,17 @@ me.t <- melt(me.t, id.vars=id)
 ## Subset to where loc_n > 5
 me.t <- me.t[loc_n > 5]
 ## Trim value
+me.t[, value_trm2 := value]
+me.t[variable %in% c("mape", "mpe") & value > 100, value_trm2 := 100]
+me.t[variable %in% c("mape", "mpe") & value < -100, value_trm2 := -100]
+me.t[variable %in% c("mae") & value > 1000, value_trm2 := 1000]
+
 me.t[, value_trm := value]
-me.t[variable %in% c("mape", "mpe") & value > 100, value_trm := 100]
-me.t[variable %in% c("mape", "mpe") & value < -100, value_trm := -100]
+me.t[variable %in% c("mape", "mpe") & value > 50, value_trm := 50]
+me.t[variable %in% c("mape", "mpe") & value < -50, value_trm := -50]
+me.t[variable %in% c("mae") & value > 1000, value_trm := 1000]
+
+
 # Super Region
 me.t[, srn2 := super_region_name]
 me.t[srn2 == "Central Europe, Eastern Europe, and Central Asia", srn2 := "Eastern Europe, Central Asia"]
@@ -206,6 +225,8 @@ me.t[variable == "mape", disp := "Median Absolute Percent Error"]
 me.t[variable == "me", disp := "Median Error"]
 me.t[variable == "mpe", disp := "Median Percent Error"]
 me.t[variable == "mae", disp := "Median Absolute Error"]
+## Month
+me.t[, model_month := factor(model_month, levels=vals, order=T)]
 
 ## Save
 saveRDS(me.t, "data/processed/magnitude.rds")
@@ -214,7 +235,6 @@ saveRDS(me.t, "data/processed/magnitude.rds")
 
 if (graph) {
   
-
 ## Tile plots for errors BY
 plot.tile <- function(df, global=F, var, err, facet=F) {
   
@@ -243,8 +263,11 @@ plot.tile <- function(df, global=F, var, err, facet=F) {
       axis.text.y = element_text(size = 9, face = "bold"), legend.position = "top"
     )
   
-  if (var=="mpe") p <- p + scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-100, 100, 50), labels = paste0(seq(-100, 100, 50), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-100, 100))
-  if (var=="mape") p <- p + scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 45, name = "", breaks = seq(0, 100, 10), labels = paste0(seq(0, 100, 10), "%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 100))
+  # if (var=="mpe") p <- p + scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-100, 100, 50), labels = c("<-100%",paste0(seq(-50, 50, 50), "%"),">100%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-100, 100))
+  # if (var=="mape") p <- p + scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 45, name = "", breaks = seq(0, 100, 10), labels = c(paste0(seq(0, 90, 10), "%"),">100%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 100))
+  # 
+   if (var=="mpe") p <- p + scale_fill_gradient2(high = "#d73027", low = "#d73027", mid = "#4575b4", midpoint = 0, name = "", breaks = seq(-50, 50, 25), labels = c("<-50%",paste0(seq(-50, 50, 50), "%"),">50%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(-50, 50))
+  if (var=="mape") p <- p + scale_fill_gradient2(high = "#d73027", low = "#4575b4", mid = "#ffffbf", midpoint = 25, name = "", breaks = seq(0, 50, 5), labels = c(paste0(seq(0, 45, 5), "%"),">50%"), guide = guide_colorbar(barwidth = 20, barheight = .5), na.value = "white", limits = c(0, 50))
   
   return(p)
 }
@@ -267,7 +290,7 @@ dev.off()
 
 
 ## Tile plots: Monthly: MAPE/MPE by Error Type
-month <- "Jul, 2020"
+month <- "Oct, 2020"
 pdf(paste0("visuals/tile_monthly_", month, "_", Sys.Date(), ".pdf"), width = 6, height = 10 )
 for (err in c("error", "wkly_error")) {
   for (var in c("mape", "mpe")) {
@@ -297,8 +320,8 @@ df.recent[, errwk := paste0(errwk, " weeks") %>% factor(., levels=paste0(1:12, "
 
 ## Frame for model date ranges using Monthly approach
 df.monthly <- data.table(errwk=1:12 %>% rev)
-df.monthly[, min := ymd("2020-07-01")]
-df.monthly[, max:= ymd("2020-07-31")]
+df.monthly[, min := ymd("2020-10-01")]
+df.monthly[, max:= ymd("2020-10-31")]
 df.monthly[, mid := max]
 df.monthly[, mid.end := mid + errwk*7]
 df.monthly[, errwk := paste0(errwk, " weeks") %>% factor(., levels=paste0(1:12, " weeks"), ordered=T)]
@@ -307,7 +330,7 @@ p.recent <- ggplot(df.recent) +
   geom_segment(aes(x=min, xend=max, y=errwk, yend=errwk), size=4) +
   geom_segment(aes(x=mid, xend=mid.end, y=errwk, yend=errwk)) +
   geom_point(aes(x=mid.end, y=errwk)) + 
-  xlim(c(ymd("2020-06-15"), ymd("2020-11-01"))) + 
+  xlim(c(ymd("2020-09-15"), ymd("2021-01-31"))) + 
   scale_y_discrete(position="right") + 
   bbc_style() + 
   ylab("N weeks forecasting") + 
@@ -318,7 +341,7 @@ p.monthly <- ggplot(df.monthly) +
   geom_segment(aes(x=min, xend=max, y=errwk, yend=errwk), size=4) +
   geom_segment(aes(x=mid, xend=mid.end, y=errwk, yend=errwk)) +
   geom_point(aes(x=mid.end, y=errwk)) + 
-  xlim(c(ymd("2020-06-15"), ymd("2020-07-31"))) + 
+  xlim(c(ymd("2020-09-15"), ymd("2021-01-31"))) + 
   scale_y_discrete(position="right") + 
   bbc_style() + 
   ylab("N weeks forecasting") + 
@@ -331,21 +354,31 @@ plot_grid(p.recent, p.monthly, ncol=1)
 dev.off()
 
 
+
+
+
+
 #-------SUPPLEMENTAL FIGURES 1-2-3-----------------------------------
 
-pdf(paste0("visuals/tile_allmonth_", Sys.Date(), ".pdf"), width = 16, height = 9)
+pdf(paste0("visuals/tile_allmonth_", Sys.Date(), ".pdf"), width = 16, height = 16)
 
 c.wks <- 12
 c.var <- "Median Absolute Percent Error"
-months <- c("Mar, 2020","Apr, 2020","May, 2020","Jun, 2020", "Jul, 2020") 
+months <- data$model_month %>% unique %>% .[!(.%in%c("Mar, 2020"))]
 for (c.var in c("mape", "mpe", "mae")) {
   for (c.tp in c("error", "wkly_error")) {
     
-    disp.var <- ifelse(var=="mape", "Median Absolute Percent Error", ifelse(var=="mpe", "Median Percent Error", "Median Absolute Error"))
-    disp.err <- ifelse(err=="error", "Total Cumulative Error", "Weekly Error")
+    disp.var <- ifelse(c.var=="mape", "Median Absolute Percent Error", ifelse(c.var=="mpe", "Median Percent Error", "Median Absolute Error"))
+    disp.err <- ifelse(c.tp=="error", "Total Cumulative Error", "Weekly Error")
+    
+    print(c.var)
+    print(disp.var)
+    print(c.tp)
+    print(disp.err)
+    
     
     data1 <- me.t[approach=="monthly" & srn2!="Global"&loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%months&errwk<=c.wks]
-    gg1 <- ggplot(data1, aes(y = errwk, x = model_short, fill = value_trm, label = round(value))) +
+    gg1 <- ggplot(data1, aes(y = errwk, x = model_short, fill = value_trm2, label = round(value))) +
       geom_tile(alpha = 1) +
       theme_bw() +
       facet_grid(row=vars(model_month),cols=vars(srn2),scales="free_y",switch="y",as.table=F) +
@@ -361,7 +394,7 @@ for (c.var in c("mape", "mpe", "mae")) {
       scale_y_continuous(breaks=seq(1,12))
     
     data2 <- me.t[approach=="monthly"&srn2=="Global" &loc_n > 5 & variable == c.var & err_type == c.tp&model_month%in%months&errwk<=c.wks]
-    gg2 <- ggplot(data2, aes(y = errwk, x = model_short, fill = value_trm, label = round(value))) +
+    gg2 <- ggplot(data2, aes(y = errwk, x = model_short, fill = value_trm2, label = round(value))) +
       geom_tile(alpha = 1) +
       theme_bw() +
       facet_grid(row=vars(model_month),cols=vars(srn2),scales="free_y",as.table=F) +
@@ -413,167 +446,176 @@ lme.errors.l[variable %in% c("Median Absolute Error"), variable := "Med Abs Err"
 
 c.vals <- c(
   "Delphi" = "#e31a1c",
-  "IHME - CF SEIR" = "#6a3d9a",
-  "IHME - Curve Fit" = "#cab2d6",
-  "IHME - MS SEIR" = "#33a02c",
+  "IHME" = "#33a02c",
   "Los Alamos Nat Lab" = "#1f78b4",
   "Youyang Gu" = "#ff7f00",
   "Imperial" = "#fb9a99",
-  "SIKJalpha" = "#FF1493" 
+  "SIKJalpha" = "#FF1493", 
+  "UCLA-ML" = "#cab2d6"
 )
 
 if (r.forecast_plots == 1) {
-  raster_pdf(paste0("visuals/country_forecast_", Sys.Date(), ".pdf"), width = 12, height = 8, res=150)
-  for (c.loc in ord[deaths_cum>10, location_name]) {
-    print(c.loc)
-   
-    # check if US state
-    is.state <- ifelse(c.loc %in% locs[grepl(x = ihme_loc_id, pattern = "USA_"), location_name], 1, 0)
-
-    # get start date
-    c.start <- min(data[location_name == c.loc & truth > 0, date]) - 8
-    c.for <- max(data[location_name == c.loc & !is.na(truth), date])
-    c.end <- c.for + 127
-    
-    # Current Forecasts
-    # scale y axis to 110% of non-Imperial max model value (prevent scale blowout)
-    c.max <- 1.1 * max(data[current == 1 & location_name == c.loc & date < c.end & date > c.start & !is.na(model) & !(model_long %in% c("Imperial", "SIKJalpha")), upper_cum / 1000], na.rm = T)
-
-    gg1 <- ggplot(
-      data[current == 1 & location_name == c.loc & date < c.end & date >= c.for & !is.na(model_long) & !(model_long %in% c("IHME - CF SEIR","IHME - Curve Fit"))],
-      aes(x = date, color = model_long, fill = model_long)
+  
+plots <- mclapply(ord[deaths_cum>10, location_name], function(c.loc) {
+  # check if US state
+  is.state <- ifelse(c.loc %in% locs[grepl(x = ihme_loc_id, pattern = "USA_"), location_name], 1, 0)
+  
+  # get start date
+  c.start <- min(data[location_name == c.loc & truth > 0, date]) - 8
+  c.for <- max(data[location_name == c.loc & !is.na(truth), date])
+  c.end <- c.for + 127
+  
+  # Current Forecasts
+  # scale y axis to 110% of non-Imperial max model value (prevent scale blowout)
+  #c.max <- 1.1 * max(data[current == 1 & location_name == c.loc & date < c.end & date > c.start & !is.na(model) & !(model_long %in% c("Imperial", "SIKJalpha")), upper_cum / 1000], na.rm = T)
+  c.max <- .98 * max(data[current == 1 & location_name == c.loc & date < c.end & date > c.start & !is.na(model), upper_cum / 1000], na.rm = T)
+  
+  gg1 <- ggplot(
+    data[current == 1 & location_name == c.loc & date < c.end & date >= c.for & !is.na(model_long) & !(model_long %in% c("IHME - CF SEIR","IHME - Curve Fit"))],
+    aes(x = date, color = model_long, fill = model_long)
+  ) +
+    geom_line(aes(y = deaths_cum / 1000), size = 1.5) +
+    geom_ribbon(aes(y = deaths_cum / 1000, ymin = lower_cum / 1000, ymax = upper_cum / 1000), alpha = .3, color = NA) +
+    theme_bw() +
+    geom_line(data = data[location_name == c.loc & date > c.start & date < c.end & !is.na(model)], fill = "white", color = "black", aes(y = jhu / 1000, shape = "JHU"), size=1.5) +
+    geom_line(data = data[location_name == c.loc & date > c.start & date < c.end & !is.na(model)], fill = "white", color = "black", aes(y = nyt / 1000, shape = "NYT"), size=1.5) +
+    geom_vline(xintercept = c.for, linetype = "longdash", alpha = .5) +
+    scale_x_date(
+      breaks = function(x) seq.Date(from = min(x) %>% floor_date("month"), to = max(x), by = "1 months"),
+      date_labels = "%b"
     ) +
-      geom_line(aes(y = deaths_cum / 1000), size = 2) +
-      geom_ribbon(aes(y = deaths_cum / 1000, ymin = lower_cum / 1000, ymax = upper_cum / 1000), alpha = .1, color = NA) +
-      theme_bw() +
-      geom_point(data = data[location_name == c.loc & date > c.start & date < c.end & !is.na(model)], fill = "white", color = "black", aes(y = jhu / 1000, shape = "JHU")) +
-      geom_point(data = data[location_name == c.loc & date > c.start & date < c.end & !is.na(model)], fill = "white", color = "black", aes(y = nyt / 1000, shape = "NYT")) +
-      geom_vline(xintercept = c.for, linetype = "longdash", alpha = .5) +
-      scale_x_date(
-        breaks = function(x) seq.Date(from = min(x) %>% floor_date("month"), to = max(x), by = "1 months"),
-        date_labels = "%b"
-      ) +
-      labs(y = "Deaths (Thousands)", x = "Week of", title = "Current Forecast") +
-      theme(
-        plot.title = element_text(size = 12, face = "bold"),
-        axis.title.x = element_text(size = 10, face = "bold"),
-        axis.text.y = element_text(size = 10, face = "bold"),
-        strip.text.x = element_text(size = 10, face = "bold"), 
-        legend.position = "top", legend.margin=unit(0, "cm"),
-        legend.text = element_text(size = 8)
-      ) +
-      scale_color_manual(values = c.vals, name = "") +
-      scale_fill_manual(values = c.vals, name = "") +
-      scale_shape_manual(name = "", values = c("JHU" = 21, "NYT" = 24)) +
-      coord_cartesian(ylim = c(0, c.max))
-    # remove shape legend if not a US state
-    if (is.state == 0) {
-      gg1 <- gg1 + guides(shape = F)
-    }
-
-    # All historical versions
-    c.max <- 1.1 * max(data[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long) & !(model_long %in% c("Imperial", "SIKJalpha")), deaths_cum / 1000], na.rm = T)
-
-    gg2 <- ggplot(
-      data[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long)],
-      aes(x = date, color = model_long, fill = model_long)
+    labs(y = "Deaths (Thousands)", x = "Week of", title = "Current Forecast") +
+    theme(
+      plot.title = element_text(size = 12, face = "bold"),
+      axis.title.x = element_text(size = 10, face = "bold"),
+      axis.text.y = element_text(size = 10, face = "bold"),
+      strip.text.x = element_text(size = 10, face = "bold"), 
+      legend.position = "top", legend.margin=unit(0, "cm"),
+      legend.text = element_text(size = 8)
     ) +
-      theme_bw() +
-      geom_line(aes(y = deaths_cum / 1000, alpha = model_date, group = model_date), size = 2) +
-      facet_wrap(~model_long, nrow = 1) +
-      geom_point(data = data[location_name == c.loc & date > c.start & date < c.end & !is.na(model) & model != "Ensemble"], fill = "white", color = "black", aes(y = jhu / 1000, shape = "JHU")) +
-      geom_point(data = data[location_name == c.loc & date > c.start & date < c.end & !is.na(model) & model != "Ensemble"], fill = "white", color = "black", aes(y = nyt / 1000, shape = "NYT")) +
-      geom_vline(aes(xintercept = min_model_date), linetype = "longdash", alpha = .5) +
-      geom_vline(aes(xintercept = max_model_date), linetype = "longdash", alpha = .5) +
-      scale_x_date(
-        breaks = function(x) seq.Date(from = min(x) %>% floor_date("month"), to = max(x), by = "2 months"),
-        date_labels = "%b"
-      ) +
-      labs(y = "Deaths (Thousands)", x = "Week of", title = "All Model Versions") +
-      theme(
-        plot.title = element_text(size = 12, face = "bold"),
-        axis.title.x = element_blank(), axis.title.y = element_blank(), legend.title = element_blank(),
-        axis.text.y = element_text(size = 10, face = "bold"), strip.background = element_rect(fill = "white"),
-        strip.text.x = element_text(size = 10, face = "bold"), legend.position = "none"
-      ) +
-      scale_color_manual(values = c.vals, name = "") +
-      scale_fill_manual(values = c.vals, name = "") +
-      guides(color = F, fill = F) +
-      scale_shape_manual(name = "", values = c("JHU" = 21, "NYT" = 24)) +
-      coord_cartesian(ylim = c(0, c.max))
-
-
-    # All Errors
-    c.max <- 1.1 * max(errors[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long) & !(model_long %in% c("Imperial", "SIKJalpha")), error / 1000], na.rm = T)
-    c.min <- 1.1 * min(errors[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long) & !(model_long %in% c("Imperial", "SIKJalpha")), error / 1000], na.rm = T)
-
-    gg3 <- ggplot(
-      errors[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long)],
-      aes(x = date, color = model_long, fill = model_long, y = error / 1000)
+    scale_color_manual(values = c.vals, name = "") +
+    scale_fill_manual(values = c.vals, name = "") +
+    scale_shape_manual(name = "", values = c("JHU" = 21, "NYT" = 24)) +
+    coord_cartesian(ylim = c(0, c.max)) +
+    guides(fill=FALSE)
+  # remove shape legend if not a US state
+  if (is.state == 0) {
+    gg1 <- gg1 + guides(shape = F)
+  }
+  
+  # All historical versions    #, "SIKJalpha"
+  
+  #c.max <- 1.1 * max(data[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long) & !(model_long %in% c("Imperial")), deaths_cum / 1000], na.rm = T)
+  c.max <- 1.1 * max(data[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long), deaths_cum / 1000], na.rm = T)
+  
+  gg2 <- ggplot(
+    data[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long)],
+    aes(x = date, color = model_long, fill = model_long)
+  ) +
+    theme_bw() +
+    geom_line(aes(y = deaths_cum / 1000, alpha = model_date, group = model_date), size = 2) +
+    facet_wrap(~model_long, nrow = 1) +
+    geom_line(data = data[location_name == c.loc & date > c.start & date < c.end & !is.na(model) & model != "Ensemble"], fill = "white", color = "black", aes(y = jhu / 1000, shape = "JHU")) +
+    geom_line(data = data[location_name == c.loc & date > c.start & date < c.end & !is.na(model) & model != "Ensemble"], fill = "white", color = "black", aes(y = nyt / 1000, shape = "NYT")) +
+    geom_vline(aes(xintercept = min_model_date), linetype = "longdash", alpha = .5) +
+    geom_vline(aes(xintercept = max_model_date), linetype = "longdash", alpha = .5) +
+    scale_x_date(
+      breaks = function(x) seq.Date(from = min(x) %>% floor_date("month"), to = max(x), by = "2 months"),
+      date_labels = "%b"
     ) +
-      theme_bw() +
-      geom_hline(yintercept = 0, alpha = .7) +
-      facet_wrap(~model_long, nrow = 1) +
-      geom_point() +
-      geom_vline(aes(xintercept = min_model_date), linetype = "longdash", alpha = .5) +
-      geom_vline(aes(xintercept = max_model_date), linetype = "longdash", alpha = .5) +
-      scale_x_date(
-        limits = c(c.start, as.Date(c.end)), breaks = function(x) seq.Date(from = c.start %>% floor_date("month"), to = as.Date(c.end), by = "2 months"),
-        date_labels = "%b"
-      ) +
-      labs(y = "Deaths (Thousands)", x = "Week of", title = "All Cumulative Errors") +
-      theme(
-        plot.title = element_text(size = 12, face = "bold"),
-        axis.title.x = element_blank(), axis.title.y = element_blank(), legend.title = element_blank(),
-        axis.text.y = element_text(size = 10, face = "bold"), strip.background = element_rect(fill = "white"),
-        strip.text.x = element_text(size = 10, face = "bold"), legend.position = "none"
-      ) +
-      scale_color_manual(values = c.vals, name = "") +
-      scale_fill_manual(values = c.vals, name = "") +
-      guides(color = F, fill = F) +
-      coord_cartesian(ylim = c(c.min, c.max))
-
-
-    lme.errors.l[variable %in% c("Med Err", "Median Percent Error"), add_line := 0]
-
-    # Average Error
-    c.max <- 1.1 * max(lme.errors.l[location_name == c.loc & variable %in% c("Med Err", "Med Abs Err") & !(model_long %in% c("Imperial", "SIKJalpha")), value / 1000], na.rm = T)
-    c.min <- min(lme.errors.l[location_name == c.loc & variable %in% c("Med Err", "Med Abs Err") & !(model_long %in% c("Imperial", "SIKJalpha")), value / 1000], na.rm = T)
-
-    gg4 <- ggplot(
-      lme.errors.l[location_name == c.loc & variable %in% c("Med Err", "Med Abs Err")&model_month%in%c("Mar, 2020","Apr, 2020","May, 2020","Jun, 2020", "Jul, 2020") & errwk <= 6],
-      aes(x = errwk, y = value / 1000, color = model, fill = model_long)
+    labs(y = "Deaths (Thousands)", x = "Week of", title = "All Model Versions") +
+    theme(
+      plot.title = element_text(size = 12, face = "bold"),
+      axis.title.x = element_blank(), legend.title = element_blank(),
+      axis.text.y = element_text(size = 10, face = "bold"), strip.background = element_rect(fill = "white"),
+      strip.text.x = element_text(size = 10, face = "bold"), legend.position = "none"
     ) +
-      geom_hline(aes(yintercept = add_line), alpha = .7) +
-      geom_bar(stat = "identity", position = position_dodge(width = .7)) +
-      facet_grid(cols=vars(model_month),rows=vars(variable), scales = "free",as.table=F) +
-      theme_bw() +
-      scale_x_continuous(breaks = seq(1, 6)) +
-      labs(y = "Deaths (Thousands)", x = "Weeks Forecasting", title = paste0("Cumulative Out-Of-Sample Error\n(Post Intercept Shift)\n")) +
-      theme(
-        plot.title = element_text(size = 12, face = "bold"),
-        axis.title.x = element_text(size = 10, face = "bold"), axis.title.y = element_text(size = 10, face = "bold"),
-        axis.text.y = element_text(size = 10, face = "bold"), strip.background = element_rect(fill = "white"),
-        strip.text.x = element_text(size = 10, face = "bold"),strip.text.y = element_text(size = 10, face = "bold"), legend.position = "none"
-      ) +
-      scale_color_manual(values = c.vals, name = "") +
-      scale_fill_manual(values = c.vals, name = "") 
-    #+coord_cartesian(ylim = c(c.min, c.max))
+    scale_color_manual(values = c.vals, name = "") +
+    scale_fill_manual(values = c.vals, name = "") +
+    guides(color = F, fill = F) +
+    scale_shape_manual(name = "", values = c("JHU" = 21, "NYT" = 24)) +
+    coord_cartesian(ylim = c(0, c.max))
+  
+  
+  # All Errors
+  c.max <- 1.1 * max(errors[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long) & !(model_long %in% c("Imperial", "SIKJalpha")), error / 1000], na.rm = T)
+  c.min <- 1.1 * min(errors[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long) & !(model_long %in% c("Imperial", "SIKJalpha")), error / 1000], na.rm = T)
+  
+  gg3 <- ggplot(
+    errors[location_name == c.loc & date < c.end & date > c.start & !is.na(model_long)],
+    aes(x = date, color = model_long, fill = model_long, y = error / 1000)
+  ) +
+    theme_bw() +
+    geom_hline(yintercept = 0, alpha = .7) +
+    facet_wrap(~model_long, nrow = 1) +
+    geom_point() +
+    geom_vline(aes(xintercept = min_model_date), linetype = "longdash", alpha = .5) +
+    geom_vline(aes(xintercept = max_model_date), linetype = "longdash", alpha = .5) +
+    scale_x_date(
+      limits = c(c.start, as.Date(c.end)), breaks = function(x) seq.Date(from = c.start %>% floor_date("month"), to = as.Date(c.end), by = "2 months"),
+      date_labels = "%b"
+    ) +
+    labs(y = "Deaths (Thousands)", x = "Month", title = "All Cumulative Errors") +
+    theme(
+      plot.title = element_text(size = 12, face = "bold"),
+      axis.title.x = element_text(size = 10, face = "bold"), legend.title = element_blank(),
+      axis.text.y = element_text(size = 10, face = "bold"), strip.background = element_rect(fill = "white"),
+      strip.text.x = element_text(size = 10, face = "bold"), legend.position = "none"
+    ) +
+    scale_color_manual(values = c.vals, name = "") +
+    scale_fill_manual(values = c.vals, name = "") +
+    guides(color = F, fill = F) +
+    coord_cartesian(ylim = c(c.min, c.max))
+  
+  
+  lme.errors.l[variable %in% c("Med Err", "Median Percent Error"), add_line := 0]
+  
+  # Average Error
+  c.max <- 1.1 * max(lme.errors.l[location_name == c.loc & variable %in% c("Med Err", "Med Abs Err") & !(model_long %in% c("Imperial", "SIKJalpha")), value / 1000], na.rm = T)
+  c.min <- min(lme.errors.l[location_name == c.loc & variable %in% c("Med Err", "Med Abs Err") & !(model_long %in% c("Imperial", "SIKJalpha")), value / 1000], na.rm = T)
+  
+  gg4 <- ggplot(
+    lme.errors.l[location_name == c.loc & variable %in% c("Med Err", "Med Abs Err")&model_month%in%c("Sep, 2020", "Oct, 2020", "Nov, 2020", "Dec, 2020", "Jan, 2021") & errwk <= 6],
+    aes(x = errwk, y = value / 1000, color = model, fill = model_long)
+  ) +
+    geom_hline(aes(yintercept = add_line), alpha = .7) +
+    geom_bar(stat = "identity", position = position_dodge(width = .7)) +
+    facet_grid(cols=vars(model_month),rows=vars(variable), scales = "free",as.table=F) +
+    theme_bw() +
+    scale_x_continuous(breaks = seq(1, 6)) +
+    labs(y = "Deaths (Thousands)", x = "Weeks Forecasting", title = paste0("Cumulative Out-Of-Sample Error\n(Post Intercept Shift)\n")) +
+    theme(
+      plot.title = element_text(size = 12, face = "bold"),
+      axis.title.x = element_text(size = 10, face = "bold"), axis.title.y = element_text(size = 10, face = "bold"),
+      axis.text.y = element_text(size = 10, face = "bold"), strip.background = element_rect(fill = "white"),
+      strip.text.x = element_text(size = 10, face = "bold"),strip.text.y = element_text(size = 10, face = "bold"), legend.position = "none"
+    ) +
+    scale_color_manual(values = c.vals, name = "") +
+    scale_fill_manual(values = c.vals, name = "") 
+  #+coord_cartesian(ylim = c(c.min, c.max))
+  
+  
+  lay <- rbind(
+    c(1, 1,  4, 4),
+    c(1, 1,  4, 4),
+    c(2, 2,  2, 2),
+    c(3, 3,  3, 3)
+  )
+  
+  grid.arrange(gg1, gg2, gg3, gg4, top = textGrob(paste0(c.loc), gp = gpar(fontsize = 20, fontface = "bold")), ncol = 2, layout_matrix = lay)
+  
+}, mc.cores=4)
 
 
-    lay <- rbind(
-      c(1, 1,  4, 4),
-      c(1, 1,  4, 4),
-      c(2, 2,  2, 2),
-      c(3, 3,  3, 3)
-    )
-
-    grid.arrange(gg1, gg2, gg3, gg4, top = textGrob(paste0(c.loc), gp = gpar(fontsize = 20, fontface = "bold")), ncol = 2, layout_matrix = lay)
- 
-     }
-  dev.off()
+pdf(paste0("visuals/country_forecast_", Sys.Date(), ".pdf"), width = 15, height = 10)
+for (i in 1:length(plots)) {
+  print(paste0(i, "/", length(plots)))
+  grid.draw(plots[[i]])
+  grid.newpage()
 }
+dev.off()
 
+}
 }
 
 #-------------number plug------------------------------------------------------------
@@ -594,15 +636,19 @@ c.tp <- "error"
 me.t[, value := round(value, 1)]
 
 # Number Plug Results for Monthly Approach
-me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "Global" & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(1, 12), value]
+me.t[approach=="monthly" & model_month=="Oct, 2020" & super_region_name == "Global" & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(1, 12), value]
+me.t[approach=="monthly" & model_month=="Oct, 2020"  & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(6), c("super_region_name","value")]
 me.t[approach=="monthly" & model_month=="Jul, 2020"  & model_short == "Pooled" & variable == c.var & err_type == c.tp & errwk %in% c(6), c("super_region_name","value")]
-me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "Global"  & variable == c.var & err_type == c.tp & errwk %in% c(6), c("model_short","value")]
-me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "Global"  & variable == c.var & err_type == c.tp & errwk %in% c(12), c("model_short","value")]
-me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "High-income"  & variable == c.var & err_type == c.tp & errwk %in% c(12), c("model_short","value")]
+
+me.t[approach=="monthly" & model_month=="Oct, 2020" & super_region_name == "Global"  & variable == c.var & err_type == c.tp & errwk %in% c(6), c("model_short","value")]
+me.t[approach=="monthly" & model_month=="Oct, 2020" & super_region_name == "Global"  & variable == c.var & err_type == c.tp & errwk %in% c(12), c("model_short","value")]
+me.t[approach=="monthly" & model_month=="Oct, 2020" & super_region_name == "High-income"  & variable == c.var & err_type == c.tp & errwk %in% c(12), c("model_short","value")]
 
 c.var <- "mpe"
 c.tp <- "error"
-me.t[approach=="monthly" & model_month=="Jul, 2020" & super_region_name == "Global" & variable == c.var & err_type == c.tp & errwk %in% c(6), c("model_short","value")]
+me.t[approach=="monthly" & model_month=="Oct, 2020" & super_region_name == "Global" & variable == c.var & err_type == c.tp & errwk %in% c(6), c("model_short","value")]
+
+
 
 # Number Plug Results for Recent Approach
 
@@ -613,24 +659,25 @@ me.t[approach=="recent" & errwk==1&super_region_name=="Global"&err_type=="error"
 me.t[approach=="recent" & errwk==12&super_region_name=="Global"&err_type=="error"&variable=="mape"]
 #At the global level pooling across models, the most recent 6-week MAPE value was 7.2%.  
 me.t[approach=="recent" & errwk==6&super_region_name=="Global"&model_short=="Pooled"&err_type=="error"&variable=="mape"]
+me.t[approach=="recent" & errwk==6&super_region_name=="Global"&err_type=="error"&variable=="mape"]
 
 #---------------------------------------------------------------------------------------
 #Numbers in Table 1
 unique(data$model)
-length(unique(data[model=="ihme_cf" & nchar(ihme_loc_id)==3,location_name]))
-length(unique(data[model=="ihme_hseir" & nchar(ihme_loc_id)==3,location_name]))
-length(unique(data[model=="ihme_elast" & nchar(ihme_loc_id)==3,location_name]))
+length(unique(data[model=="ihme" & nchar(ihme_loc_id)==3,location_name]))
+length(unique(data[model=="ucla" & nchar(ihme_loc_id)==3,location_name]))
 length(unique(data[model=="yyg" & nchar(ihme_loc_id)==3,location_name]))
 length(unique(data[model=="delphi" & nchar(ihme_loc_id)==3,location_name]))
 length(unique(data[model=="imperial" & nchar(ihme_loc_id)==3,location_name]))
 length(unique(data[model=="lanl" & nchar(ihme_loc_id)==3,location_name]))
 length(unique(data[model=="sikjalpha" & nchar(ihme_loc_id)==3,location_name]))
 
+(max(data[model=="ucla"&current==1,date]))
 (max(data[model=="lanl"&current==1,date]))
 (max(data[model=="delphi"&current==1,date]))
 (max(data[model=="imperial"&current==1,date]))
 (max(data[model=="yyg"&current==1,date]))
-(max(data[model=="ihme_elast"&current==1,date]))
+(max(data[model=="ihme"&current==1,date]))
 (max(data[model=="sikjalpha"&current==1,date]))
 }
 
