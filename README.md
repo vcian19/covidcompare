@@ -22,7 +22,7 @@ Here we provide the codebase and analytical/graphing framework to collate and co
 - [SIKJalpha](https://github.com/scc-usc/ReCOVER-COVID-19)
 - [Youyang Gu (YYG)](https://github.com/youyanggu/covid19_projections/tree/master/)
 
-Details on the systematic review completed to compile the list of models are detailed in the corresponding publication. If your model is not currently included, we encourage you to message us at pyliu47@gmail.com and link to a publically accessible repo or website where they may be accessed. 
+Details on the systematic review completed to compile the list of models are detailed in the corresponding publication. If your model is not currently included, we encourage you to submit an Github issue with the link to a publically accessible repo or website where they may be accessed. 
 
 ## Viz Tool
 
