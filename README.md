@@ -25,7 +25,7 @@ Here we provide the codebase and analytical/graphing framework to collate and co
 - [The Los Alamos National Laboratory (LANL)](https://covid-19.bsvgateway.org/)
 - [SIKJalpha](https://github.com/scc-usc/ReCOVER-COVID-19)
 - [Youyang Gu (YYG)](https://github.com/youyanggu/covid19_projections/tree/master/)
-- [UCLA-ML] (https://github.com/uclaml/ucla-covid19-forecasts)
+- [UCLA-ML](https://github.com/uclaml/ucla-covid19-forecasts)
 
 Details on the systematic review completed to compile the list of models are detailed in the corresponding publication. If your model is not currently included, we encourage you to submit an Github issue with the link to a publically accessible repo or website where they may be accessed. 
 
