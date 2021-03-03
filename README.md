@@ -1,19 +1,16 @@
 # covidcompare
 
-#### Authors:   
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.4578761.svg)](https://doi.org/10.5281/zenodo.4578761)
+
+#### Code Authors:   
 - Joseph Friedman (Email: joseph.robert.friedman at gmail dot com, Twitter: [@JosephRFriedman](https://twitter.com/JosephRFriedman/))
 - Patty Liu (Email: pyliu47 at gmail dot com, Twitter: [@pyliu47](https://twitter.com/pyliu47/))
   
-#### Manuscript Citation:  
+#### Manuscript:  
 Predictive performance of international COVID-19 mortality forecasting models
 Joseph Friedman, Patrick Liu, Christopher E. Troeger, Austin Carter, Robert C. Reiner JR, Ryan M. Barber, James Collins, Stephen S. Lim, David M. Pigott, Theo Vos, Simon I. Hay, Christopher J.L. Murray, Emmanuela Gakidou
 medRxiv 2020.07.13.20151233
 doi: https://doi.org/10.1101/2020.07.13.20151233
-
-#### Code Citation:
-
-Joseph Friedman, Patrick Liu, Christopher E. Troeger, Austin Carter, Robert C. Reiner JR, Ryan M. Barber, James Collins, Stephen S. Lim, David M. Pigott, Theo Voss, Simon I. Hay, Christopher J.L. Murray,  Emmanuela Gakidou. Predictive performance of international COVID-19 mortality forecasting models (covidcompare Version 1.0).  http://doi.org/10.5281/zenodo.4578761 (2021)
-
 
 ## How to Use this Repo
 
