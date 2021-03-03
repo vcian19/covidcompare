@@ -4,11 +4,15 @@
 - Joseph Friedman (Email: joseph.robert.friedman at gmail dot com, Twitter: [@JosephRFriedman](https://twitter.com/JosephRFriedman/))
 - Patty Liu (Email: pyliu47 at gmail dot com, Twitter: [@pyliu47](https://twitter.com/pyliu47/))
   
-#### Manuscript:  
+#### Manuscript Citation:  
 Predictive performance of international COVID-19 mortality forecasting models
 Joseph Friedman, Patrick Liu, Christopher E. Troeger, Austin Carter, Robert C. Reiner JR, Ryan M. Barber, James Collins, Stephen S. Lim, David M. Pigott, Theo Vos, Simon I. Hay, Christopher J.L. Murray, Emmanuela Gakidou
 medRxiv 2020.07.13.20151233
 doi: https://doi.org/10.1101/2020.07.13.20151233
+
+#### Code Citation:
+
+Joseph Friedman, Patrick Liu, Christopher E. Troeger, Austin Carter, Robert C. Reiner JR, Ryan M. Barber, James Collins, Stephen S. Lim, David M. Pigott, Theo Voss, Simon I. Hay, Christopher J.L. Murray,  Emmanuela Gakidou. Predictive performance of international COVID-19 mortality forecasting models (covidcompare Version 1.0).  http://doi.org/10.5281/zenodo.4578761 (2021)
 
 
 ## How to Use this Repo
@@ -21,6 +25,7 @@ Here we provide the codebase and analytical/graphing framework to collate and co
 - [The Los Alamos National Laboratory (LANL)](https://covid-19.bsvgateway.org/)
 - [SIKJalpha](https://github.com/scc-usc/ReCOVER-COVID-19)
 - [Youyang Gu (YYG)](https://github.com/youyanggu/covid19_projections/tree/master/)
+- [UCLA-ML] (https://github.com/uclaml/ucla-covid19-forecasts)
 
 Details on the systematic review completed to compile the list of models are detailed in the corresponding publication. If your model is not currently included, we encourage you to submit an Github issue with the link to a publically accessible repo or website where they may be accessed. 
 
