@@ -7,10 +7,7 @@
 - Patty Liu (Email: pyliu47 at gmail dot com, Twitter: [@pyliu47](https://twitter.com/pyliu47/))
   
 #### Manuscript:  
-Predictive performance of international COVID-19 mortality forecasting models
-Joseph Friedman, Patrick Liu, Christopher E. Troeger, Austin Carter, Robert C. Reiner JR, Ryan M. Barber, James Collins, Stephen S. Lim, David M. Pigott, Theo Vos, Simon I. Hay, Christopher J.L. Murray, Emmanuela Gakidou
-medRxiv 2020.07.13.20151233
-doi: https://doi.org/10.1101/2020.07.13.20151233
+Friedman, J., Liu, P., Troeger, C.E. et al. Predictive performance of international COVID-19 mortality forecasting models. Nat Commun 12, 2609 (2021). https://doi.org/10.1038/s41467-021-22457-w
 
 ## How to Use this Repo
 
