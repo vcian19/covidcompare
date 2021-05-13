@@ -7,7 +7,7 @@
 - Patty Liu (Email: pyliu47 at gmail dot com, Twitter: [@pyliu47](https://twitter.com/pyliu47/))
   
 #### Manuscript:  
-Friedman, J., Liu, P., Troeger, C.E. et al. Predictive performance of international COVID-19 mortality forecasting models. Nat Commun 12, 2609 (2021). https://doi.org/10.1038/s41467-021-22457-w
+Friedman, J., Liu, P., Troeger, C.E. et al. Predictive performance of international COVID-19 mortality forecasting models. **Nature Communications**, 2609 (2021). https://doi.org/10.1038/s41467-021-22457-w
 
 ## How to Use this Repo
 
